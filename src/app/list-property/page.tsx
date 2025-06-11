@@ -1,5 +1,5 @@
 
-"use client"; 
+"use client";
 
 import { useState, useEffect, type ChangeEvent } from 'react';
 import Header from '@/components/layout/Header';
@@ -14,7 +14,7 @@ import { useForm, SubmitHandler, Controller, useFieldArray } from 'react-hook-fo
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { ImagePlus, Loader2, Trash2, UploadCloud, AlertCircle } from 'lucide-react';
+import { ImagePlus, Loader2, Trash2, AlertCircle } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
@@ -36,7 +36,7 @@ const propertySchema = z.object({
   maxGuests: z.coerce.number().min(1, "At least 1 guest is required.").max(50,"Max guests cannot exceed 50."),
   images: z.array(
     z.object({
-      url: z.string().url("A valid image URL from upload is required.") 
+      url: z.string().url("A valid image URL from upload is required.")
     })
   ).min(1, "At least one image is required.").max(MAX_IMAGES, `You can upload a maximum of ${MAX_IMAGES} images.`),
   amenities: z.array(z.string()).optional(),
@@ -45,7 +45,7 @@ const propertySchema = z.object({
 type PropertyFormData = z.infer<typeof propertySchema>;
 
 const availableAmenitiesList = [
-  'WiFi', 'Kitchen', 'Air Conditioning', 'Free Parking', 'TV', 
+  'WiFi', 'Kitchen', 'Air Conditioning', 'Free Parking', 'TV',
   'Washer', 'Dryer', 'Pool', 'Gym', 'Pet Friendly', 'Heating', 'Dedicated Workspace',
   'Beach Access', 'Fireplace', 'Rooftop Access', 'Elevator'
 ];
@@ -56,8 +56,8 @@ export default function ListPropertyPage() {
   const { toast } = useToast();
   const [formIsLoading, setFormIsLoading] = useState(false);
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
-  const [imageUploadStates, setImageUploadStates] = useState<Array<{ file: File; isLoading: boolean; error?: string; cloudinaryUrl?: string }>>([]);
-  const [fileInputKey, setFileInputKey] = useState(Date.now()); 
+  const [imageUploadStates, setImageUploadStates] = useState<Array<{ file: File; isLoading: boolean; error?: string; cloudinaryUrl?: string; previewUrl?: string }>>([]);
+  const [fileInputKey, setFileInputKey] = useState(Date.now());
 
   const { control, handleSubmit, formState: { errors }, setValue, watch } = useForm<PropertyFormData>({
     resolver: zodResolver(propertySchema),
@@ -66,7 +66,7 @@ export default function ListPropertyPage() {
       bedrooms: 1,
       bathrooms: 1,
       maxGuests: 2,
-      images: [], 
+      images: [],
     }
   });
 
@@ -79,6 +79,15 @@ export default function ListPropertyPage() {
     if (status === "unauthenticated") {
       router.replace("/login?callbackUrl=/list-property");
     }
+    // Cleanup object URLs on unmount
+    return () => {
+      imageUploadStates.forEach(state => {
+        if (state.previewUrl && state.previewUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(state.previewUrl);
+        }
+      });
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, router]);
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -97,16 +106,23 @@ export default function ListPropertyPage() {
         description: `You can upload a maximum of ${MAX_IMAGES} images. You have ${currentUploadedCount} uploaded, tried to add ${files.length}.`,
         variant: "destructive",
       });
-      setFileInputKey(Date.now()); 
+      setFileInputKey(Date.now());
       return;
     }
-    
-    const newUploadStates = Array.from(files).map(file => ({ file, isLoading: true, error: undefined, cloudinaryUrl: undefined }));
-    setImageUploadStates(prev => [...prev, ...newUploadStates]);
-    setFileInputKey(Date.now()); 
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    const newUploadStates = Array.from(files).map(file => ({
+      file,
+      isLoading: true,
+      error: undefined,
+      cloudinaryUrl: undefined,
+      previewUrl: URL.createObjectURL(file) // Create preview URL
+    }));
+    setImageUploadStates(prev => [...prev, ...newUploadStates]);
+    setFileInputKey(Date.now());
+
+    for (let i = 0; i < newUploadStates.length; i++) {
+      const uploadState = newUploadStates[i];
+      const file = uploadState.file;
       console.log(`[CLIENT] Processing file: ${file.name}, size: ${file.size} bytes`);
 
       if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -125,46 +141,66 @@ export default function ListPropertyPage() {
           body: formData,
         });
         console.log(`[CLIENT] Upload API response status for ${file.name}: ${response.status}`);
-        const result = await response.json();
+
+        const responseText = await response.text();
+        let result;
+        try {
+            result = JSON.parse(responseText);
+        } catch (parseError) {
+            console.error(`[CLIENT] Failed to parse JSON response for ${file.name}. Raw response:`, responseText, parseError);
+            const errorMsg = response.status === 503 ? "Image upload service is temporarily unavailable or not configured." : "Server returned an unreadable response (not JSON). Check server configuration.";
+            throw new Error(errorMsg);
+        }
         console.log(`[CLIENT] Upload API response data for ${file.name}:`, result);
 
+
         if (!response.ok) {
-          throw new Error(result.message || `Upload failed with status ${response.status}`);
+          throw new Error(result.message || `Upload failed: ${result.error || `Server error ${response.status}`}`);
         }
-        
+
         if (!result.imageUrl) {
           throw new Error('Upload successful but no image URL returned from server.');
         }
-        
+
         console.log(`[CLIENT] File ${file.name} uploaded successfully. URL: ${result.imageUrl}`);
         setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, cloudinaryUrl: result.imageUrl } : s));
         appendImageFormField({ url: result.imageUrl });
 
       } catch (err: any) {
          console.error(`[CLIENT] Error uploading ${file.name}:`, err);
-         setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, error: err.message || 'Upload failed' } : s));
+         let uploadErrorMsg = err.message || 'Upload failed due to an unknown client error.';
+          if (err.message && err.message.toLowerCase().includes('failed to fetch')) {
+            uploadErrorMsg = "Network error or server not reachable. Please check your internet connection.";
+          }
+         setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, error: uploadErrorMsg } : s));
          toast({
             title: `Upload Failed for ${file.name}`,
-            description: err.message || "An unexpected error occurred during upload.",
+            description: uploadErrorMsg,
             variant: "destructive",
          });
       }
     }
   };
-  
+
   const removeImage = (indexToRemove: number) => {
     console.log(`[CLIENT] Attempting to remove image at index: ${indexToRemove}`);
     const imageStateToRemove = imageUploadStates[indexToRemove];
-    
-    if (imageStateToRemove?.cloudinaryUrl) {
-      console.log(`[CLIENT] Image to remove has Cloudinary URL: ${imageStateToRemove.cloudinaryUrl}`);
-      const formFieldIndex = imageFormFields.findIndex(field => field.url === imageStateToRemove.cloudinaryUrl);
-      if (formFieldIndex !== -1) {
-        removeImageFormField(formFieldIndex);
-        console.log(`[CLIENT] Removed image from form data at index: ${formFieldIndex}`);
-      } else {
-        console.log(`[CLIENT] Cloudinary URL ${imageStateToRemove.cloudinaryUrl} not found in form fields.`);
-      }
+
+    if (imageStateToRemove) {
+        // Revoke object URL if it exists to prevent memory leaks
+        if (imageStateToRemove.previewUrl && imageStateToRemove.previewUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(imageStateToRemove.previewUrl);
+        }
+        if (imageStateToRemove.cloudinaryUrl) {
+          console.log(`[CLIENT] Image to remove has Cloudinary URL: ${imageStateToRemove.cloudinaryUrl}`);
+          const formFieldIndex = imageFormFields.findIndex(field => field.url === imageStateToRemove.cloudinaryUrl);
+          if (formFieldIndex !== -1) {
+            removeImageFormField(formFieldIndex);
+            console.log(`[CLIENT] Removed image from form data at index: ${formFieldIndex}`);
+          } else {
+            console.log(`[CLIENT] Cloudinary URL ${imageStateToRemove.cloudinaryUrl} not found in form fields.`);
+          }
+        }
     }
     setImageUploadStates(prev => prev.filter((_, index) => index !== indexToRemove));
     console.log(`[CLIENT] Image removed from local imageUploadStates.`);
@@ -179,8 +215,7 @@ export default function ListPropertyPage() {
         setFormIsLoading(false);
         return;
     }
-    
-    // Ensure images are correctly populated from the imageUploadStates with cloudinaryUrls
+
     const finalImageUrls = imageUploadStates
       .filter(state => state.cloudinaryUrl)
       .map(state => ({ url: state.cloudinaryUrl as string }));
@@ -192,17 +227,17 @@ export default function ListPropertyPage() {
     }
 
     const propertyDataToSubmit = {
-      ...data, 
-      images: finalImageUrls, // Use the confirmed Cloudinary URLs
+      ...data,
+      images: finalImageUrls,
       amenities: selectedAmenities,
       hostId: session.user.id,
-      host: { 
+      host: {
         name: session.user.name || "Unknown Host",
         avatarUrl: session.user.image || undefined,
       }
     };
     console.log('[CLIENT] Property data to submit to /api/properties:', propertyDataToSubmit);
-    
+
     try {
       const response = await fetch('/api/properties', {
         method: 'POST',
@@ -222,7 +257,7 @@ export default function ListPropertyPage() {
         title: "Property Listed!",
         description: "Your property has been successfully listed.",
       });
-      router.push(`/properties/${result.propertyId}`); 
+      router.push(`/properties/${result.propertyId}`);
 
     } catch (error: any) {
       console.error('[CLIENT] Error listing property:', error);
@@ -237,11 +272,11 @@ export default function ListPropertyPage() {
   };
 
   const handleAmenityChange = (amenity: string) => {
-    setSelectedAmenities(prev => 
+    setSelectedAmenities(prev =>
       prev.includes(amenity) ? prev.filter(item => item !== amenity) : [...prev, amenity]
     );
   };
-  
+
   if (status === "loading") {
     return (
       <div className="flex flex-col min-h-screen">
@@ -265,7 +300,7 @@ export default function ListPropertyPage() {
             </CardHeader>
             <CardContent className="p-6">
                 <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-                
+
                 <div className="space-y-2">
                     <Label htmlFor="title">Property Title</Label>
                     <Input id="title" placeholder="e.g., Charming Seaside Cottage" {...control.register('title')} disabled={formIsLoading} />
@@ -306,7 +341,7 @@ export default function ListPropertyPage() {
                         {errors.pricePerNight && <p className="text-sm text-destructive">{errors.pricePerNight.message}</p>}
                     </div>
                 </div>
-                
+
                 <div className="space-y-2">
                     <Label htmlFor="location">General Location / City</Label>
                     <Input id="location" placeholder="e.g., Austin, Texas" {...control.register('location')} disabled={formIsLoading}/>
@@ -341,7 +376,7 @@ export default function ListPropertyPage() {
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3 border p-4 rounded-md max-h-60 overflow-y-auto">
                     {availableAmenitiesList.map(amenity => (
                         <div key={amenity} className="flex items-center space-x-2">
-                        <Checkbox 
+                        <Checkbox
                             id={`amenity-${amenity}`}
                             onCheckedChange={() => handleAmenityChange(amenity)}
                             checked={selectedAmenities.includes(amenity)}
@@ -355,11 +390,11 @@ export default function ListPropertyPage() {
 
                 <div className="space-y-4">
                     <Label htmlFor="image-upload-input">Property Images (at least 1, max {MAX_IMAGES}, {MAX_FILE_SIZE_MB}MB per file)</Label>
-                    <Input 
+                    <Input
                       id="image-upload-input"
-                      key={fileInputKey} 
-                      type="file" 
-                      multiple 
+                      key={fileInputKey}
+                      type="file"
+                      multiple
                       accept="image/png, image/jpeg, image/gif, image/webp"
                       onChange={handleFileChange}
                       className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
@@ -367,41 +402,30 @@ export default function ListPropertyPage() {
                     />
                      {errors.images && errors.images.message && <p className="text-sm text-destructive">{errors.images.message}</p>}
                      {errors.images?.root?.message && <p className="text-sm text-destructive">{errors.images.root.message}</p>}
-                     
+
 
                     {imageUploadStates.length > 0 && (
                         <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
                             {imageUploadStates.map((upload, index) => (
                                 <div key={index} className="relative aspect-square rounded-md overflow-hidden border group shadow-sm">
-                                    {upload.cloudinaryUrl ? (
-                                        <Image 
-                                            src={upload.cloudinaryUrl} 
-                                            alt={`Uploaded preview ${index + 1}`} 
-                                            fill
-                                            sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, 20vw"
-                                            className="object-cover"
-                                         />
-                                    ) : upload.file && !upload.error ? ( // Show local preview if file exists and no error yet
+                                    {upload.previewUrl ? (
                                         <Image
-                                            src={URL.createObjectURL(upload.file)}
+                                            src={upload.previewUrl}
                                             alt={`Preview ${index + 1}`}
                                             fill
                                             sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, 20vw"
                                             className="object-cover"
-                                            onLoad={() => URL.revokeObjectURL(upload.file ? URL.createObjectURL(upload.file) : '')} // Clean up object URL
-                                        />
+                                         />
                                     ) : (
                                         <div className="w-full h-full bg-muted flex items-center justify-center">
-                                            {upload.isLoading && <Loader2 className="h-8 w-8 animate-spin text-primary" />}
-                                            {!upload.isLoading && upload.error && <AlertCircle className="h-8 w-8 text-destructive" title={upload.error} />}
-                                            {!upload.isLoading && !upload.error && !upload.file && <ImagePlus className="h-8 w-8 text-muted-foreground" />}
+                                            <ImagePlus className="h-8 w-8 text-muted-foreground" />
                                         </div>
                                     )}
                                     {!upload.isLoading && (
-                                      <Button 
-                                        type="button" 
-                                        variant="destructive" 
-                                        size="icon" 
+                                      <Button
+                                        type="button"
+                                        variant="destructive"
+                                        size="icon"
                                         className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
                                         onClick={() => removeImage(index)}
                                         disabled={formIsLoading}
@@ -415,7 +439,14 @@ export default function ListPropertyPage() {
                                             <Loader2 className="h-8 w-8 animate-spin text-white" />
                                         </div>
                                     )}
-                                    {upload.error && <p className="absolute bottom-0 left-0 right-0 bg-destructive/80 text-destructive-foreground text-xs p-1 text-center truncate" title={upload.error}>{upload.error}</p>}
+                                    {upload.error && !upload.isLoading && (
+                                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-destructive/70 p-1">
+                                        <AlertCircle className="h-6 w-6 text-destructive-foreground mb-1" />
+                                        <p className="text-destructive-foreground text-xs text-center truncate" title={upload.error}>
+                                          {upload.error.length > 30 ? upload.error.substring(0,27) + "..." : upload.error}
+                                        </p>
+                                      </div>
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -442,4 +473,3 @@ export default function ListPropertyPage() {
     </div>
   );
 }
-

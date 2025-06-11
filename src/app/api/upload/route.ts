@@ -1,11 +1,18 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
-import cloudinary from '@/lib/cloudinary';
+import { cloudinaryInstance, cloudinaryConfigError } from '@/lib/cloudinary';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 
 export async function POST(request: NextRequest) {
   console.log('[API /api/upload] Received POST request');
+
+  if (cloudinaryConfigError || !cloudinaryInstance) {
+    const errorMsg = cloudinaryConfigError || 'Cloudinary service is not initialized on the server.';
+    console.error(`[API /api/upload] Aborting: Cloudinary not configured. Error: ${errorMsg}`);
+    return NextResponse.json({ message: 'Image upload service is not configured correctly on the server.', error: errorMsg }, { status: 503 }); // 503 Service Unavailable
+  }
+
   const session = await getServerSession(authOptions);
 
   if (!session || !session.user) {
@@ -23,7 +30,6 @@ export async function POST(request: NextRequest) {
   }
   console.log(`[API /api/upload] File received: ${file.name}, type: ${file.type}, size: ${file.size}`);
 
-  // Convert file to buffer
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
   console.log('[API /api/upload] File converted to buffer.');
@@ -31,17 +37,17 @@ export async function POST(request: NextRequest) {
   try {
     console.log('[API /api/upload] Attempting to upload to Cloudinary...');
     const uploadResult = await new Promise<{ secure_url: string; public_id: string } | undefined>((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
+      const stream = cloudinaryInstance.uploader.upload_stream( // Use cloudinaryInstance
         {
-          resource_type: 'image', 
-          folder: 'lodger_properties', 
+          resource_type: 'image',
+          folder: 'lodger_properties',
         },
         (error, result) => {
           if (error) {
-            console.error('[API /api/upload] Cloudinary Upload Error:', error);
-            reject(error);
+            console.error('[API /api/upload] Cloudinary Upload Stream Error:', error);
+            reject(error); // This rejection should be caught by the outer try...catch
           } else {
-            console.log('[API /api/upload] Cloudinary Upload Success Result:', result);
+            console.log('[API /api/upload] Cloudinary Upload Stream Success Result:', result);
             resolve(result as { secure_url: string; public_id: string } | undefined);
           }
         }
@@ -58,12 +64,18 @@ export async function POST(request: NextRequest) {
       }, { status: 200 });
     } else {
       console.error('[API /api/upload] Cloudinary upload failed to return a secure URL. Full result:', uploadResult);
-      throw new Error('Cloudinary upload failed to return a secure URL.');
+      // This case might happen if Cloudinary returns a 200 OK but the result format is unexpected
+      throw new Error('Cloudinary upload succeeded but response was malformed or lacked secure_url.');
     }
 
   } catch (error: any) {
-    console.error('[API /api/upload] Overall Upload API Error:', error);
-    return NextResponse.json({ message: 'Image upload failed.', error: error.message || 'Unknown server error during upload' }, { status: 500 });
+    console.error('[API /api/upload] Overall Upload API Error (after buffer conversion):', error);
+    let errorMessage = 'Image upload failed due to a server error.';
+    if (error.message) {
+        errorMessage = error.message;
+    } else if (typeof error === 'object' && error.http_code) {
+        errorMessage = `Cloudinary error: ${error.http_code} - ${error.message}`;
+    }
+    return NextResponse.json({ message: 'Image upload failed.', error: errorMessage }, { status: 500 });
   }
 }
-
