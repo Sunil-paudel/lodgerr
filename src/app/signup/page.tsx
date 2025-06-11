@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import Link from 'next/link';
 import { useToast } from "@/hooks/use-toast";
+import { Loader2 } from 'lucide-react';
 
 export default function SignUpPage() {
   const { toast } = useToast();
@@ -17,9 +18,11 @@ export default function SignUpPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setIsLoading(true);
     
     if (password !== confirmPassword) {
       toast({
@@ -27,17 +30,60 @@ export default function SignUpPage() {
         description: "Passwords do not match.",
         variant: "destructive",
       });
+      setIsLoading(false);
+      return;
+    }
+
+    if (password.length < 8) {
+       toast({
+        title: "Error",
+        description: "Password must be at least 8 characters long.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
       return;
     }
 
     const formData = { fullName, email, password };
-    console.log('Signup form submitted:', formData);
+    
+    try {
+      const response = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
 
-    toast({
-      title: "Feature in Development",
-      description: "Signup functionality is not yet connected to the database. Your data has not been saved.",
-      duration: 5000,
-    });
+      const result = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Success!",
+          description: "Account created successfully. You can now log in.",
+        });
+        // Optionally redirect to login page or clear form
+        setFullName('');
+        setEmail('');
+        setPassword('');
+        setConfirmPassword('');
+      } else {
+        toast({
+          title: "Signup Failed",
+          description: result.message || "An error occurred during signup.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Signup form submission error:", error);
+      toast({
+        title: "Error",
+        description: "Could not connect to the server. Please try again later.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -60,6 +106,7 @@ export default function SignUpPage() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   required 
+                  disabled={isLoading}
                 />
               </div>
               <div className="space-y-2">
@@ -71,6 +118,7 @@ export default function SignUpPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required 
+                  disabled={isLoading}
                 />
               </div>
               <div className="space-y-2">
@@ -83,6 +131,7 @@ export default function SignUpPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required 
                   minLength={8}
+                  disabled={isLoading}
                 />
               </div>
               <div className="space-y-2">
@@ -95,11 +144,15 @@ export default function SignUpPage() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required 
                   minLength={8}
+                  disabled={isLoading}
                 />
               </div>
             </CardContent>
             <CardFooter className="flex flex-col space-y-3 pt-6">
-              <Button type="submit" className="w-full bg-primary hover:bg-primary/90">Sign Up</Button>
+              <Button type="submit" className="w-full bg-primary hover:bg-primary/90" disabled={isLoading}>
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isLoading ? 'Signing Up...' : 'Sign Up'}
+              </Button>
               <p className="text-sm text-muted-foreground">
                 Already have an account?{' '}
                 <Link href="/login" className="font-medium text-accent hover:underline">
