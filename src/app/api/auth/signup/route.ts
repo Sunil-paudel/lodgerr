@@ -43,28 +43,8 @@ export const POST = async (request: NextRequest) => {
     await newUser.save();
     console.log("User saved successfully."); 
 
-    // Sending confirmation email
-    try {
-      const transporter = nodemailer.createTransport({
-        service: "gmail",
-        auth: {
-          user: process.env.GOOGLE_EMAIL,
-          pass: process.env.GOOGLE_PASSWORD,
-        },
-      });
-
-      const mailOptions = {
-        from: process.env.GOOGLE_EMAIL,
-        to: email,
-        subject: "Registration Confirmation - Lodger",
-        text: `Thank you for registering on Lodger, ${fullName}! Your registration is successful. If you did not apply for registration, please contact us.`,
-      };
-
-      await transporter.sendMail(mailOptions);
-      console.log("Confirmation email sent to:", email);
-    } catch (emailError: any) {
-      console.error("Failed to send confirmation email:", emailError.message || emailError);
-    }
+    
+    
 
     return NextResponse.json(
       { message: "User created successfully. Confirmation email sent." },

@@ -20,7 +20,7 @@ export interface Property { // Corresponds to Listings
   pricePerNight: number;
   location: string;
   address?: string; // Kept from original, useful detail
-  numGuests: number; // Renamed from maxGuests
+  maxGuests: number; // Changed from numGuests to maxGuests for consistency
   images: string[];
   bedrooms: number; // Kept from original
   bathrooms: number; // Kept from original

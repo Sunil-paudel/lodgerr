@@ -23,7 +23,7 @@ export const authOptions: NextAuthOptions = {
           await connectDB();
           console.log("NextAuth Authorize: DB connection successful (or already connected).");
 
-          const user = await User.findOne({ email: credentials.email }).lean();
+          const user = await User.findOne({ email: credentials.email });
 
           if (!user) {
             console.log("NextAuth Authorize: No user found with email:", credentials.email);
