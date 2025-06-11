@@ -14,16 +14,24 @@ const userSchema = new Schema(
       unique: true,
       required: true,
     },
-    password: {
+    passwordHash: {
       type: String,
-      required: true,
-      
     },
-    
-    resetToken: String, // Store the reset token here
-    resetTokenExpiry: Date, // Store the token's expiration date here
+    role: {
+      type: String,
+      enum: ["guest", "host", "admin"],
+      default: "guest",
+    },
+    stripeAccountId: {
+      type: String,
+    },
+    avatarUrl: {
+      type: String,
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
 // If the User collection does not exist, create a new one.

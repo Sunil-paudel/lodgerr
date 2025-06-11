@@ -32,7 +32,7 @@ export const POST = async (request: NextRequest) => {
     const newUser = new User({
       name: fullName,
       email,
-      password: hashedPassword, 
+      passwordHash: hashedPassword, // Corrected field name to match schema
     });
 
     console.log("New user object before save:", JSON.stringify(newUser.toObject(), null, 2)); // DEBUG LOG
