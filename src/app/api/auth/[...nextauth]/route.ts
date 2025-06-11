@@ -1,16 +1,16 @@
-
 import NextAuth, { type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import User from "@/models/User";
+import connectDB from "@/utils/db"; // Changed from connect to connectDB
 import bcrypt from "bcryptjs";
-import User from "@/models/User"; // Assuming IUser is the Mongoose document type
-import connect from "@/utils/db"; // Your database connection utility
+import type { DefaultSession, User as NextAuthUser } from "next-auth"; // Keep existing imports
 
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       name: "Credentials",
       credentials: {
-        email: { label: "Email", type: "text", placeholder: "jsmith@example.com" },
+        email: { label: "Email", type: "text" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
@@ -18,13 +18,12 @@ export const authOptions: NextAuthOptions = {
           console.log("NextAuth: Missing email or password in credentials");
           throw new Error("Please enter both email and password.");
         }
-        
-        console.log("NextAuth Authorize: Attempting to authorize user:", credentials.email);
+        console.log("NextAuth Authorize: Attempting to connect to DB for user:", credentials.email);
         try {
-          await connect(); // Ensure DB connection
+          await connectDB(); // Changed from connect() to connectDB()
           console.log("NextAuth Authorize: DB connection successful (or already connected).");
 
-          const user = await User.findOne({ email: credentials.email }).lean();
+          const user = await User.findOne({ email: credentials.email }).lean(); // .lean() is good for performance here
 
           if (!user) {
             console.log("NextAuth Authorize: No user found with email:", credentials.email);
@@ -32,15 +31,17 @@ export const authOptions: NextAuthOptions = {
           }
 
           if (!user.passwordHash) {
-            console.error("NextAuth Authorize: User found but passwordHash is missing for user:", credentials.email);
+            console.log("NextAuth Authorize: User account not configured for password login (missing passwordHash):", credentials.email);
             throw new Error("User account is not properly configured for password login.");
           }
-          
-          console.log("NextAuth Authorize: Comparing password for user:", credentials.email);
-          const isValid = await bcrypt.compare(credentials.password, user.passwordHash);
 
-          if (!isValid) {
-            console.log("NextAuth Authorize: Invalid password for user:", credentials.email);
+          const isPasswordCorrect = await bcrypt.compare(
+            credentials.password,
+            user.passwordHash
+          );
+
+          if (!isPasswordCorrect) {
+            console.log("NextAuth Authorize: Incorrect password for user:", credentials.email);
             throw new Error("Invalid password.");
           }
 
@@ -50,23 +51,20 @@ export const authOptions: NextAuthOptions = {
             name: user.name,
             email: user.email,
             // role: user.role, // Uncomment if you add role to your User model and want it in the token
-          };
-        } catch (error: any) {
-          // Log the specific error that occurred during authorization
-          console.error(`Critical error in NextAuth authorize callback for ${credentials.email}:`, error.message);
-          console.error("Full error object in authorize:", error);
+          } as NextAuthUser; // Cast to NextAuthUser type
 
-          // Re-throw specific errors or a generic one for NextAuth to handle
-          if (error.message?.startsWith("Database connection failed:") || 
-              error.message === "Server configuration error: MONGODB_URI is not defined." ||
-              error.message === "No user found with this email." ||
-              error.message === "Invalid password." ||
-              error.message === "User account is not properly configured for password login." ||
-              error.message === "Please enter both email and password.") {
-            throw error; // Re-throw known/specific errors
+        } catch (error: any) {
+          console.error("Critical error in NextAuth authorize callback:", error.message);
+          // Log the full error for server-side debugging, but don't expose detailed errors to the client.
+          // The error message thrown here will be sent to the client.
+          if (error.message.startsWith("Database connection failed:")) {
+             throw new Error("Database connection error. Please try again later.");
           }
-          // For other unexpected errors, throw a generic message
-          throw new Error("Authentication failed due to a server issue. Please check server logs.");
+          if (error.message === "No user found with this email." || error.message === "Invalid password.") {
+            throw error; // Re-throw specific known errors
+          }
+          // For other errors, throw a generic message to avoid exposing internal details
+          throw new Error("An internal server error occurred during authentication.");
         }
       },
     }),
@@ -74,29 +72,32 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
   },
-  pages: {
-    signIn: "/login",
-  },
   callbacks: {
     async jwt({ token, user }) {
-      // The 'user' object is available here only on sign-in/sign-up
-      if (user) {
-        token.id = user.id; // 'user.id' comes from the object returned by 'authorize'
-        // token.role = user.role; // Add other properties from 'user' to token if needed
+      if (user) { // user object is available during sign-in
+        token.id = user.id;
+        // token.name = user.name; // Already included by default if available
+        // token.email = user.email; // Already included by default if available
+        // token.role = (user as any).role; // Add custom properties like role if they exist on your user object
       }
       return token;
     },
     async session({ session, token }) {
-      // 'token' contains the data from the 'jwt' callback
       if (token && session.user) {
-        session.user.id = token.id as string; // Ensure type casting if necessary
-        // session.user.role = token.role as string; // Add to session if needed
+        session.user.id = token.id as string;
+        // session.user.name = token.name as string; // Already included by default
+        // session.user.email = token.email as string; // Already included by default
+        // session.user.role = token.role as string; // Add custom properties
       }
       return session;
     },
   },
-  secret: process.env.NEXTAUTH_SECRET, // Essential for JWT signing
-  // debug: process.env.NODE_ENV === 'development', // Optional: more verbose logs in dev
+  pages: {
+    error: "/login", // Error code passed in query string as ?error=
+    // signIn: '/login', // Can specify if your login page is different, default is /api/auth/signin
+  },
+  secret: process.env.NEXTAUTH_SECRET,
+  // debug: process.env.NODE_ENV === 'development', // Enable debug logs in development
 };
 
 const handler = NextAuth(authOptions);

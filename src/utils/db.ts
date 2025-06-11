@@ -1,54 +1,55 @@
 
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI;
+// This is the hardcoded MongoDB connection string that was previously in use.
+// It's generally recommended to use environment variables for sensitive data like this.
+const MONGO = "mongodb+srv://muhammadabdullahcse23:qJVH09i0AIxXgQhW@cluster0.gffx04i.mongodb.net/test?retryWrites=true&w=majority";
 
-// Mongoose connection caching for serverless environments
+if (!MONGO) {
+  // This check remains, though with a hardcoded string, MONGO will always be defined here.
+  // If you intend to switch to environment variables, this check becomes more relevant for process.env.MONGODB_URI
+  throw new Error("MongoDB connection string is not defined.");
+}
+
 let cached = (global as any).mongoose;
 
 if (!cached) {
   cached = (global as any).mongoose = { conn: null, promise: null };
 }
 
-async function connect() {
-  if (!MONGODB_URI) {
-    const errorMessage = "FATAL ERROR: MONGODB_URI is not defined in your .env.local file.";
-    console.error(errorMessage);
-    throw new Error("Server configuration error: MONGODB_URI is not defined.");
-  }
-
+async function connectDB() {
   if (cached.conn) {
-    // console.log("MongoDB: Using cached connection."); // Can be too noisy for dev
+    console.log("MongoDB: Using cached connection.");
     return cached.conn;
   }
 
   if (!cached.promise) {
-    mongoose.set('strictQuery', false);
-    // Mask password in log: replace everything between '//' and '@' that doesn't include ':' with 'username:********'
-    const maskedUri = MONGODB_URI.replace(/\/\/([^:]+):([^@]+)@/, '//REDACTED_USER:********@');
+    const opts = {
+      bufferCommands: false,
+    };
+    // Mask password in log
+    const maskedUri = MONGO.replace(/\/\/([^:]+):([^@]+)@/, '//REDACTED_USER:********@');
     console.log(`MongoDB: Attempting to connect to ${maskedUri}`);
-    
-    cached.promise = mongoose.connect(MONGODB_URI, {
-      bufferCommands: false, // Disable buffering if you want quick failures for connection issues
-    }).then((mongooseInstance) => {
+
+    cached.promise = mongoose.connect(MONGO, opts).then((mongooseInstance) => {
       console.log("MongoDB: Connection successful!");
       return mongooseInstance;
     }).catch(err => {
       console.error("MongoDB: Connection failed.", err.message);
-      console.error("Full Mongoose connection error:", JSON.stringify(err, Object.getOwnPropertyNames(err)));
+      // console.error("Full Mongoose connection error:", JSON.stringify(err, Object.getOwnPropertyNames(err))); // Potentially too verbose
       cached.promise = null; // Reset promise on failure
-      throw new Error(`Database connection failed: ${err.message}`); // Re-throw with Mongoose error message
+      throw new Error(`Database connection failed: ${err.message}`);
     });
   }
 
   try {
     cached.conn = await cached.promise;
   } catch (e) {
-    // This catch is if the promise was already rejected and we're re-awaiting
-    cached.promise = null; // Ensure promise is cleared on re-throw
-    throw e; // Re-throw the error which includes the message "Database connection failed: ..."
+    cached.promise = null;
+    throw e;
   }
+
   return cached.conn;
 }
 
-export default connect;
+export default connectDB;
