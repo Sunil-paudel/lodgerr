@@ -2,13 +2,13 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation"; // Import useRouter
+import { useRouter } from "next/navigation"; 
 import { useEffect } from "react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Loader2, UserCog, Mail, Briefcase, Home, Settings } from "lucide-react"; // Added Settings
+import { Loader2, UserCog, Mail, Briefcase, Home, Settings, ShieldCheck } from "lucide-react"; 
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
@@ -21,7 +21,7 @@ const getInitials = (name?: string | null) => {
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
-  const router = useRouter(); // Initialize useRouter
+  const router = useRouter(); 
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -89,8 +89,8 @@ export default function DashboardPage() {
                     <span className="text-muted-foreground">{user.name || "N/A"}</span>
                   </div>
                    <div className="flex items-center">
-                    <Mail className="mr-2 h-4 w-4 text-muted-foreground/70 inline-block md:hidden" />
-                    <span className="font-medium w-24 shrink-0">Email:</span> 
+                    <Mail className="mr-2 h-4 w-4 text-muted-foreground/70 inline-block align-middle" />
+                    <span className="font-medium w-24 shrink-0 ml-0.5">Email:</span> 
                     <span className="text-muted-foreground">{user.email || "N/A"}</span>
                   </div>
                    {user.id && (
@@ -101,7 +101,8 @@ export default function DashboardPage() {
                    )}
                    {user.role && (
                      <div className="flex items-center">
-                       <span className="font-medium w-24 shrink-0">Role:</span> 
+                       <ShieldCheck className="mr-2 h-4 w-4 text-muted-foreground/70 inline-block align-middle" />
+                       <span className="font-medium w-24 shrink-0 ml-0.5">Role:</span> 
                        <span className="capitalize px-2 py-0.5 bg-accent/20 text-accent-foreground rounded-full text-xs font-medium">{user.role}</span>
                      </div>
                    )}
@@ -122,7 +123,7 @@ export default function DashboardPage() {
                         </CardHeader>
                         <CardContent>
                             <Button variant="outline" className="w-full border-primary/50 text-primary hover:bg-primary/10 hover:text-primary" asChild>
-                                <Link href="/my-bookings">View Bookings (Coming Soon)</Link>
+                                <Link href="#">View Bookings (Coming Soon)</Link>
                             </Button>
                         </CardContent>
                     </Card>
@@ -135,7 +136,7 @@ export default function DashboardPage() {
                         </CardHeader>
                         <CardContent>
                             <Button variant="outline" className="w-full border-primary/50 text-primary hover:bg-primary/10 hover:text-primary" asChild>
-                               <Link href="/my-properties">View Properties (Coming Soon)</Link>
+                               <Link href="#">View Properties (Coming Soon)</Link>
                             </Button>
                         </CardContent>
                     </Card>

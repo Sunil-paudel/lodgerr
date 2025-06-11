@@ -1,8 +1,8 @@
 
 import NextAuth, { type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import User from "@/models/User"; // Assuming IUser is the default export
-import connectDB from "@/utils/db"; // Updated import
+import User from "@/models/User"; 
+import connectDB from "@/utils/db"; 
 import bcrypt from "bcryptjs";
 
 export const authOptions: NextAuthOptions = {
@@ -50,13 +50,12 @@ export const authOptions: NextAuthOptions = {
             id: user._id.toString(),
             name: user.name,
             email: user.email,
-            image: user.avatarUrl, // Include avatarUrl as image
-            // role: user.role, // Uncomment if you add role to User model and want it in session
+            image: user.avatarUrl, 
+            role: user.role, // Include role from the user document
           };
         } catch (error: any) {
           console.error("Critical error in NextAuth authorize callback:", error.message);
           console.error("Full error details:", error); 
-          // Propagate a user-friendly error or the original one if it's informative
           if (error.message === "Connection failed!") {
              throw new Error("Database connection error. Please try again later.");
           }
@@ -71,35 +70,34 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user, trigger, session }) {
       if (trigger === "update" && session?.user) {
-        // When session is updated (e.g. after profile edit)
         token.name = session.user.name;
         token.email = session.user.email;
-        token.picture = session.user.image; // NextAuth uses 'picture' for image in token
+        token.picture = session.user.image; 
+        token.role = session.user.role; // Ensure role is updated in token if session is updated
       }
       if (user) {
-        // On sign-in, 'user' is the object returned from 'authorize'
         token.id = user.id;
         token.name = user.name;
         token.email = user.email;
-        token.picture = user.image; // user.image comes from authorize
-        // token.role = user.role; // Uncomment if user has role
+        token.picture = user.image; 
+        token.role = user.role; // Add role to token
       }
       return token;
     },
     async session({ session, token }) {
-      if (token) {
+      if (token && session.user) { // Ensure session.user exists
         session.user.id = token.id as string;
         session.user.name = token.name as string | null | undefined;
         session.user.email = token.email as string | null | undefined;
-        session.user.image = token.picture as string | null | undefined; // 'picture' from JWT becomes 'image' in session
-        // session.user.role = token.role as string; // Uncomment if token has role
+        session.user.image = token.picture as string | null | undefined; 
+        session.user.role = token.role as string | null | undefined; // Add role to session user
       }
       return session;
     },
   },
   pages: {
-    error: "/login", // Error code passed in query string as ?error=
-    signIn: '/login', // Redirect here for sign in if not authenticated
+    error: "/login", 
+    signIn: '/login', 
   },
   secret: process.env.NEXTAUTH_SECRET,
 };
