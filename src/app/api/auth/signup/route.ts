@@ -31,50 +31,61 @@ export const POST = async (request: NextRequest) => {
     const newUser = new User({
       name: fullName,
       email,
-      passwordHash: hashedPassword, // Ensure this matches your User model schema field name
-      role: 'guest', // Default role
+      password: hashedPassword, // Changed from passwordHash to password
+      // role: 'guest', // Role is not defined in the User model, so commenting out for now
     });
 
     await newUser.save();
 
-    // Configure nodemailer transporter
-    // Ensure GOOGLE_EMAIL and GOOGLE_PASSWORD are set in .env.local
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.GOOGLE_EMAIL,
-        pass: process.env.GOOGLE_PASSWORD,
-      },
-    });
-
-    const mailOptions = {
-      from: process.env.GOOGLE_EMAIL,
-      to: email,
-      subject: "Registration Confirmation - Lodger",
-      text: `Thank you for registering on Lodger, ${fullName}! Your registration is successful. If you have not applied for registration please visit http://localhost:3000/contact to contact us.`,
-    };
-
+    // Sending confirmation email (optional, consider environment variables for credentials)
     try {
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: process.env.GOOGLE_EMAIL,
+          pass: process.env.GOOGLE_PASSWORD,
+        },
+      });
+
+      const mailOptions = {
+        from: process.env.GOOGLE_EMAIL,
+        to: email,
+        subject: "Registration Confirmation - Lodger",
+        text: `Thank you for registering on Lodger, ${fullName}! Your registration is successful. If you did not apply for registration, please contact us.`,
+      };
+
       await transporter.sendMail(mailOptions);
       console.log("Confirmation email sent to:", email);
-      return NextResponse.json(
-        { message: "User has been created, and confirmation email sent" },
-        { status: 201 }
-      );
     } catch (emailError: any) {
-      console.error("Failed to send confirmation email:", emailError);
-      // User was created, but email failed.
-      return NextResponse.json(
-        { message: "User created, but confirmation email could not be sent.", errorDetails: emailError.message },
-        { status: 201 } // Still 201 as user was created, or use a different status like 207 Multi-Status if preferred
-      );
+      console.error("Failed to send confirmation email:", emailError.message || emailError);
+      // Decide if user creation should fail if email fails. For now, it doesn't.
     }
 
-  } catch (err: any) {
-    console.error("Signup API Error:", err); // This will log the full error object on the server
-    // The err.message here will be "Connection failed!" if that's what db.ts threw
     return NextResponse.json(
-        { message: err.message || "An unexpected error occurred during signup." },
+      { message: "User created successfully. Confirmation email sent." },
+      { status: 201 }
+    );
+
+  } catch (err: any) {
+    console.error("Signup API Error:", err); 
+    const errorMessage = err.message || "An unexpected error occurred during signup.";
+    let errorDetails = "";
+    if (err.stack) {
+        errorDetails = err.stack;
+    } else if (typeof err === 'object' && err !== null) {
+        errorDetails = JSON.stringify(err);
+    }
+    
+    // Specific check for "Connection failed!" from db.ts
+    if (errorMessage === "Connection failed!") {
+         return NextResponse.json(
+            { message: "Server error during signup.", error: "Connection failed!", details: err.stack || "No stack available." },
+            { status: 500 }
+        );
+    }
+
+    return NextResponse.json(
+        { message: "Server error during signup.", error: errorMessage, details: errorDetails },
         { status: 500 }
     );
   }

@@ -1,39 +1,30 @@
-import mongoose, { Schema, Document } from 'mongoose';
-import type { User as UserType, UserRole } from '@/lib/types';
+import mongoose from "mongoose";
 
-export interface UserDocument extends Omit<UserType, 'id' | 'createdAt'>, Document {}
+const { Schema } = mongoose;
 
-const userSchema = new Schema<UserDocument>(
+const userSchema = new Schema(
   {
     name: {
       type: String,
+      unique: true,
       required: true,
     },
     email: {
       type: String,
       unique: true,
       required: true,
-      trim: true,
-      lowercase: true,
     },
-    passwordHash: {
+    password: {
       type: String,
-      // required: true, // Make this required if users must always have a password
-    },
-    role: {
-      type: String,
-      enum: ['guest', 'host', 'admin'] as UserRole[],
       required: true,
-      default: 'guest',
+      
     },
-    stripeAccountId: {
-      type: String,
-    },
-    avatarUrl: {
-      type: String,
-    },
+    
+    resetToken: String, // Store the reset token here
+    resetTokenExpiry: Date, // Store the token's expiration date here
   },
-  { timestamps: true } // Automatically adds createdAt and updatedAt
+  { timestamps: true }
 );
 
-export default mongoose.models.User || mongoose.model<UserDocument>("User", userSchema);
+// If the User collection does not exist, create a new one.
+export default mongoose.models.User || mongoose.model("User", userSchema);
