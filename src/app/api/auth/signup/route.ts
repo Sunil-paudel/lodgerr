@@ -22,22 +22,25 @@ export const POST = async (request: NextRequest) => {
     if (existingUser) {
       return NextResponse.json(
         { message: "User with this email already exists" },
-        { status: 409 }
+        { status: 409 } 
       );
     }
 
     const hashedPassword = await bcrypt.hash(password, 5);
+    console.log("Generated hashedPassword:", hashedPassword); // DEBUG LOG
 
     const newUser = new User({
       name: fullName,
       email,
-      password: hashedPassword, // Changed from passwordHash to password
-      // role: 'guest', // Role is not defined in the User model, so commenting out for now
+      password: hashedPassword, 
     });
 
-    await newUser.save();
+    console.log("New user object before save:", JSON.stringify(newUser.toObject(), null, 2)); // DEBUG LOG
 
-    // Sending confirmation email (optional, consider environment variables for credentials)
+    await newUser.save();
+    console.log("User saved successfully."); // DEBUG LOG
+
+    // Sending confirmation email
     try {
       const transporter = nodemailer.createTransport({
         service: "gmail",
@@ -58,7 +61,6 @@ export const POST = async (request: NextRequest) => {
       console.log("Confirmation email sent to:", email);
     } catch (emailError: any) {
       console.error("Failed to send confirmation email:", emailError.message || emailError);
-      // Decide if user creation should fail if email fails. For now, it doesn't.
     }
 
     return NextResponse.json(
@@ -68,15 +70,20 @@ export const POST = async (request: NextRequest) => {
 
   } catch (err: any) {
     console.error("Signup API Error:", err); 
-    const errorMessage = err.message || "An unexpected error occurred during signup.";
+    
+    let errorMessage = "An unexpected error occurred during signup.";
     let errorDetails = "";
+
+    if (err.message) {
+        errorMessage = err.message;
+    }
+    
     if (err.stack) {
         errorDetails = err.stack;
     } else if (typeof err === 'object' && err !== null) {
         errorDetails = JSON.stringify(err);
     }
     
-    // Specific check for "Connection failed!" from db.ts
     if (errorMessage === "Connection failed!") {
          return NextResponse.json(
             { message: "Server error during signup.", error: "Connection failed!", details: err.stack || "No stack available." },
