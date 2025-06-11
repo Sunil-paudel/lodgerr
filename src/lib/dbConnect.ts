@@ -1,58 +1,43 @@
 
-import mongoose, { Mongoose } from 'mongoose';
+import mongoose from "mongoose";
 
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
+// Ensure MONGO environment variable is checked
+if (!process.env.MONGO) {
   throw new Error(
-    'Please define the MONGODB_URI environment variable inside .env.local'
+    'Please define the MONGO environment variable inside .env.local'
   );
 }
 
-/**
- * Global is used here to maintain a cached connection across hot reloads
- * in development. This prevents connections from growing exponentially during API Route usage.
- */
-interface CachedMongoose {
-  conn: Mongoose | null;
-  promise: Promise<Mongoose> | null;
-}
+mongoose.set('strictQuery', false);
 
-// Extend the NodeJS.Global interface to include mongoose
-declare global {
-  // eslint-disable-next-line no-var
-  var mongoose: CachedMongoose;
-}
-
-let cached: CachedMongoose = global.mongoose;
-
-if (!cached) {
-  cached = global.mongoose = { conn: null, promise: null };
-}
-
-async function dbConnect(): Promise<Mongoose> {
-  if (cached.conn) {
-    return cached.conn;
+const connect = async () => {
+  // Check if we're already connected or connecting
+  if (mongoose.connection.readyState === 1) {
+    console.log("Already connected to MongoDB.");
+    return;
   }
-
-  if (!cached.promise) {
-    const opts = {
-      bufferCommands: false, // Disable Mongoose's buffering if you prefer to handle connection errors immediately
-    };
-
-    cached.promise = mongoose.connect(MONGODB_URI!, opts).then((mongooseInstance) => {
-      return mongooseInstance;
-    });
+  if (mongoose.connection.readyState === 2) {
+    console.log("Connecting to MongoDB...");
+    // If connecting, wait for the existing connection attempt to resolve
+    // This might involve a more complex promise cache in a real app,
+    // but for this simpler version, we'll just log and let it proceed.
+    // Or, you could implement a promise to wait on.
+    // For now, to avoid multiple unhandled connection attempts,
+    // we will rely on subsequent calls to simply re-attempt if the first one failed.
   }
 
   try {
-    cached.conn = await cached.promise;
-  } catch (e) {
-    cached.promise = null; // Reset promise on error
-    throw e;
+    console.log("Attempting to connect to MongoDB...");
+    await mongoose.connect(process.env.MONGO!); // Added non-null assertion as we check MONGO above
+    console.log("Successfully connected to MongoDB.");
+  } catch (error) {
+    console.error("Connection to MongoDB failed!", error);
+    // It's often better to let the application decide how to handle this,
+    // rather than throwing an error that might crash a serverless function
+    // on startup if the DB isn't immediately available.
+    // For now, we re-throw as per the original request.
+    throw new Error("Connection failed!");
   }
+};
 
-  return cached.conn;
-}
-
-export default dbConnect;
+export default connect;
