@@ -34,7 +34,6 @@ const propertySchema = z.object({
   bedrooms: z.coerce.number().min(0, "Bedrooms cannot be negative.").max(20, "Bedrooms cannot exceed 20."),
   bathrooms: z.coerce.number().min(1, "At least 1 bathroom is required.").max(10, "Bathrooms cannot exceed 10."),
   maxGuests: z.coerce.number().min(1, "At least 1 guest is required.").max(50,"Max guests cannot exceed 50."),
-  // This will now store Cloudinary URLs
   images: z.array(
     z.object({
       url: z.string().url("A valid image URL from upload is required.") 
@@ -58,7 +57,7 @@ export default function ListPropertyPage() {
   const [formIsLoading, setFormIsLoading] = useState(false);
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
   const [imageUploadStates, setImageUploadStates] = useState<Array<{ file: File; isLoading: boolean; error?: string; cloudinaryUrl?: string }>>([]);
-  const [fileInputKey, setFileInputKey] = useState(Date.now()); // To reset file input
+  const [fileInputKey, setFileInputKey] = useState(Date.now()); 
 
   const { control, handleSubmit, formState: { errors }, setValue, watch } = useForm<PropertyFormData>({
     resolver: zodResolver(propertySchema),
@@ -67,17 +66,14 @@ export default function ListPropertyPage() {
       bedrooms: 1,
       bathrooms: 1,
       maxGuests: 2,
-      images: [], // Will be populated with Cloudinary URLs
+      images: [], 
     }
   });
 
-  // This useFieldArray is for managing the *Cloudinary URLs* in the form data, not the file inputs directly.
   const { fields: imageFormFields, append: appendImageFormField, remove: removeImageFormField } = useFieldArray({
     control,
     name: "images"
   });
-
-  const watchedFormImages = watch("images"); // To reflect Cloudinary URLs in form data for schema validation
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -86,82 +82,118 @@ export default function ListPropertyPage() {
   }, [status, router]);
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    console.log('[CLIENT] handleFileChange triggered');
     const files = event.target.files;
-    if (!files) return;
+    if (!files || files.length === 0) {
+      console.log('[CLIENT] No files selected.');
+      return;
+    }
+    console.log(`[CLIENT] ${files.length} file(s) selected.`);
 
-    const currentTotalImages = imageUploadStates.filter(s => s.cloudinaryUrl).length + files.length;
-    if (currentTotalImages > MAX_IMAGES) {
+    const currentUploadedCount = imageUploadStates.filter(s => s.cloudinaryUrl).length;
+    if (currentUploadedCount + files.length > MAX_IMAGES) {
       toast({
         title: "Too many images",
-        description: `You can upload a maximum of ${MAX_IMAGES} images. Please select fewer files.`,
+        description: `You can upload a maximum of ${MAX_IMAGES} images. You have ${currentUploadedCount} uploaded, tried to add ${files.length}.`,
         variant: "destructive",
       });
-      setFileInputKey(Date.now()); // Reset file input
+      setFileInputKey(Date.now()); 
       return;
     }
     
     const newUploadStates = Array.from(files).map(file => ({ file, isLoading: true, error: undefined, cloudinaryUrl: undefined }));
     setImageUploadStates(prev => [...prev, ...newUploadStates]);
-    setFileInputKey(Date.now()); // Reset file input so the same file can be selected again if removed
+    setFileInputKey(Date.now()); 
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const tempId = Date.now() + i; // Temporary unique ID for this upload instance
+      console.log(`[CLIENT] Processing file: ${file.name}, size: ${file.size} bytes`);
 
       if (file.size > MAX_FILE_SIZE_BYTES) {
+        console.log(`[CLIENT] File ${file.name} is too large.`);
         setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, error: `File too large (max ${MAX_FILE_SIZE_MB}MB).` } : s));
         continue;
       }
 
       const formData = new FormData();
       formData.append('file', file);
+      console.log(`[CLIENT] FormData created for ${file.name}. Attempting upload...`);
 
       try {
         const response = await fetch('/api/upload', {
           method: 'POST',
           body: formData,
         });
+        console.log(`[CLIENT] Upload API response status for ${file.name}: ${response.status}`);
         const result = await response.json();
+        console.log(`[CLIENT] Upload API response data for ${file.name}:`, result);
 
-        if (!response.ok) throw new Error(result.message || 'Upload failed');
+        if (!response.ok) {
+          throw new Error(result.message || `Upload failed with status ${response.status}`);
+        }
         
-        // Update specific upload state
+        if (!result.imageUrl) {
+          throw new Error('Upload successful but no image URL returned from server.');
+        }
+        
+        console.log(`[CLIENT] File ${file.name} uploaded successfully. URL: ${result.imageUrl}`);
         setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, cloudinaryUrl: result.imageUrl } : s));
-        // Add Cloudinary URL to react-hook-form's images array
         appendImageFormField({ url: result.imageUrl });
 
       } catch (err: any) {
+         console.error(`[CLIENT] Error uploading ${file.name}:`, err);
          setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, error: err.message || 'Upload failed' } : s));
+         toast({
+            title: `Upload Failed for ${file.name}`,
+            description: err.message || "An unexpected error occurred during upload.",
+            variant: "destructive",
+         });
       }
     }
   };
   
   const removeImage = (indexToRemove: number) => {
+    console.log(`[CLIENT] Attempting to remove image at index: ${indexToRemove}`);
     const imageStateToRemove = imageUploadStates[indexToRemove];
-    // If this image had a Cloudinary URL, find and remove it from react-hook-form
+    
     if (imageStateToRemove?.cloudinaryUrl) {
+      console.log(`[CLIENT] Image to remove has Cloudinary URL: ${imageStateToRemove.cloudinaryUrl}`);
       const formFieldIndex = imageFormFields.findIndex(field => field.url === imageStateToRemove.cloudinaryUrl);
       if (formFieldIndex !== -1) {
         removeImageFormField(formFieldIndex);
+        console.log(`[CLIENT] Removed image from form data at index: ${formFieldIndex}`);
+      } else {
+        console.log(`[CLIENT] Cloudinary URL ${imageStateToRemove.cloudinaryUrl} not found in form fields.`);
       }
     }
-    // Remove from local upload states
     setImageUploadStates(prev => prev.filter((_, index) => index !== indexToRemove));
+    console.log(`[CLIENT] Image removed from local imageUploadStates.`);
   };
 
 
   const onSubmit: SubmitHandler<PropertyFormData> = async (data) => {
+    console.log('[CLIENT] onSubmit triggered for property form.');
     setFormIsLoading(true);
     if (!session?.user?.id) {
         toast({ title: "Authentication Error", description: "You must be logged in to list a property.", variant: "destructive"});
         setFormIsLoading(false);
         return;
     }
+    
+    // Ensure images are correctly populated from the imageUploadStates with cloudinaryUrls
+    const finalImageUrls = imageUploadStates
+      .filter(state => state.cloudinaryUrl)
+      .map(state => ({ url: state.cloudinaryUrl as string }));
 
-    // 'data.images' from react-hook-form already contains the array of { url: "cloudinary_url" }
-    // We just need to ensure the server-side property schema expects this.
+    if (finalImageUrls.length === 0) {
+        toast({ title: "Validation Error", description: "At least one image must be successfully uploaded.", variant: "destructive"});
+        setFormIsLoading(false);
+        return;
+    }
+
     const propertyDataToSubmit = {
       ...data, 
+      images: finalImageUrls, // Use the confirmed Cloudinary URLs
       amenities: selectedAmenities,
       hostId: session.user.id,
       host: { 
@@ -169,6 +201,7 @@ export default function ListPropertyPage() {
         avatarUrl: session.user.image || undefined,
       }
     };
+    console.log('[CLIENT] Property data to submit to /api/properties:', propertyDataToSubmit);
     
     try {
       const response = await fetch('/api/properties', {
@@ -176,8 +209,10 @@ export default function ListPropertyPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(propertyDataToSubmit),
       });
-
+      console.log('[CLIENT] /api/properties response status:', response.status);
       const result = await response.json();
+      console.log('[CLIENT] /api/properties response data:', result);
+
 
       if (!response.ok) {
         throw new Error(result.message || "Failed to list property.");
@@ -190,6 +225,7 @@ export default function ListPropertyPage() {
       router.push(`/properties/${result.propertyId}`); 
 
     } catch (error: any) {
+      console.error('[CLIENT] Error listing property:', error);
       toast({
         title: "Listing Failed",
         description: error.message || "An unexpected error occurred.",
@@ -321,7 +357,7 @@ export default function ListPropertyPage() {
                     <Label htmlFor="image-upload-input">Property Images (at least 1, max {MAX_IMAGES}, {MAX_FILE_SIZE_MB}MB per file)</Label>
                     <Input 
                       id="image-upload-input"
-                      key={fileInputKey} // Used to reset the input
+                      key={fileInputKey} 
                       type="file" 
                       multiple 
                       accept="image/png, image/jpeg, image/gif, image/webp"
@@ -345,11 +381,20 @@ export default function ListPropertyPage() {
                                             sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, 20vw"
                                             className="object-cover"
                                          />
+                                    ) : upload.file && !upload.error ? ( // Show local preview if file exists and no error yet
+                                        <Image
+                                            src={URL.createObjectURL(upload.file)}
+                                            alt={`Preview ${index + 1}`}
+                                            fill
+                                            sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, 20vw"
+                                            className="object-cover"
+                                            onLoad={() => URL.revokeObjectURL(upload.file ? URL.createObjectURL(upload.file) : '')} // Clean up object URL
+                                        />
                                     ) : (
                                         <div className="w-full h-full bg-muted flex items-center justify-center">
                                             {upload.isLoading && <Loader2 className="h-8 w-8 animate-spin text-primary" />}
                                             {!upload.isLoading && upload.error && <AlertCircle className="h-8 w-8 text-destructive" title={upload.error} />}
-                                            {!upload.isLoading && !upload.error && <ImagePlus className="h-8 w-8 text-muted-foreground" />}
+                                            {!upload.isLoading && !upload.error && !upload.file && <ImagePlus className="h-8 w-8 text-muted-foreground" />}
                                         </div>
                                     )}
                                     {!upload.isLoading && (
@@ -365,7 +410,12 @@ export default function ListPropertyPage() {
                                         <Trash2 className="h-3 w-3" />
                                       </Button>
                                     )}
-                                    {upload.error && <p className="absolute bottom-0 left-0 right-0 bg-destructive/80 text-destructive-foreground text-xs p-1 text-center truncate">{upload.error}</p>}
+                                     {upload.isLoading && (
+                                        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                                            <Loader2 className="h-8 w-8 animate-spin text-white" />
+                                        </div>
+                                    )}
+                                    {upload.error && <p className="absolute bottom-0 left-0 right-0 bg-destructive/80 text-destructive-foreground text-xs p-1 text-center truncate" title={upload.error}>{upload.error}</p>}
                                 </div>
                             ))}
                         </div>
@@ -392,3 +442,4 @@ export default function ListPropertyPage() {
     </div>
   );
 }
+
