@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useEffect } from 'react';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
@@ -23,42 +24,66 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Check for error query parameter from NextAuth.js
-  useState(() => {
+  useEffect(() => {
     const nextAuthError = searchParams?.get('error');
     if (nextAuthError) {
+      let friendlyMessage = "An unexpected error occurred during login.";
       // You can map NextAuth error codes to user-friendly messages
       if (nextAuthError === "CredentialsSignin") {
-        setError("Invalid email or password. Please try again.");
+        friendlyMessage = "Invalid email or password. Please try again.";
+      } else if (nextAuthError === "Configuration") {
+        friendlyMessage = "Server configuration error. Please contact support.";
       } else {
-        setError("An unexpected error occurred during login. Please try again.");
+        // Fallback for other NextAuth errors
+        friendlyMessage = `Login error: ${nextAuthError}. Please try again.`;
       }
+      setError(friendlyMessage);
+      toast({
+        title: "Login Problem",
+        description: friendlyMessage,
+        variant: "destructive",
+      });
       // Clear the error from URL to prevent re-display on refresh
-      router.replace('/login', { scroll: false });
+      // router.replace('/login', { scroll: false }); // Using router.replace might cause re-renders, consider if needed
     }
-  });
+  }, [searchParams, toast, router]);
 
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
     setError(null);
+    console.log("Attempting sign-in with email:", email);
 
     try {
       const result = await signIn('credentials', {
-        redirect: false, // We'll handle redirect manually or rely on callbackUrl
+        redirect: false,
         email,
         password,
       });
 
+      console.log("Login Page SignIn Result:", result);
+
       if (result?.error) {
         let friendlyError = "Login failed. Please check your credentials.";
-        if (result.error === "CredentialsSignin" || result.error.includes("Incorrect password") || result.error.includes("No user found")) {
+        // Specific error messages from NextAuth.js authorize callback
+        if (result.error === "No user found with this email." || 
+            result.error === "Invalid password." ||
+            result.error.includes("Invalid email or password")) {
            friendlyError = "Invalid email or password.";
-        } else if (result.error.includes("Missing email or password")) {
+        } else if (result.error === "Please enter both email and password.") {
           friendlyError = "Please enter both email and password.";
-        } else {
-          console.error("NextAuth SignIn Error:", result.error);
-          friendlyError = "An unexpected error occurred. Please try again later.";
+        } else if (result.error === "User account is not properly configured for password login.") {
+          friendlyError = "Account configuration issue. Please contact support.";
+        } else if (result.error.includes("Database connection error")) {
+          friendlyError = "Could not connect to the database. Please try again later.";
+        } else if (result.error.includes("server issue") || result.error.includes("server error")) {
+          friendlyError = "A server error occurred during login. Please try again later.";
+        }
+         else {
+          // Fallback for other errors passed in result.error
+          console.error("NextAuth SignIn Error from result.error:", result.error);
+          friendlyError = result.error; // Display the error message from NextAuth directly if it's specific
         }
         setError(friendlyError);
         toast({
@@ -71,18 +96,32 @@ export default function LoginPage() {
           title: "Login Successful!",
           description: "Welcome back!",
         });
-        // Successful login
-        // NextAuth.js might redirect based on callbackUrl by default if not handling manually
-        // Or, you can push to a default page:
         const callbackUrl = searchParams?.get('callbackUrl') || '/';
         router.push(callbackUrl);
+        router.refresh(); // Force a refresh to ensure session is updated across layouts/components
+      } else if (!result?.ok && !result?.error) {
+        // Handle cases where signin might not be ok but doesn't return a specific error string
+        // This could be due to network issues before NextAuth processes the request fully.
+        const genericFailMsg = "Login attempt failed. Please ensure your connection is stable and try again. Check server logs for details.";
+        setError(genericFailMsg);
+        toast({
+          title: "Login Attempt Failed",
+          description: genericFailMsg,
+          variant: "destructive",
+        });
       }
-    } catch (e) {
-      console.error("Login Page Submit Error:", e);
-      setError("An unexpected error occurred. Please try again.");
+    } catch (e: any) {
+      console.error("Login Page Submit Error (catch block):", e);
+      let connectError = "An unexpected error occurred during login. Please try again.";
+      if (e instanceof TypeError && e.message.toLowerCase().includes("failed to fetch")) {
+         connectError = "Could not connect to the server. Please check your internet connection, ensure the server is running, and verify NEXTAUTH_URL in your environment settings.";
+      } else if (e.message) {
+        connectError = e.message;
+      }
+      setError(connectError);
        toast({
-          title: "Error",
-          description: "Could not connect to the server. Please try again later.",
+          title: "Login Error",
+          description: connectError,
           variant: "destructive",
         });
     } finally {
