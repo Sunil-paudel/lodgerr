@@ -18,3 +18,13 @@ export interface Property {
   reviewsCount?: number;
   type: 'House' | 'Apartment' | 'Room' | 'Unique Stay';
 }
+
+export interface User {
+  id: string;
+  fullName: string;
+  email: string;
+  avatarUrl?: string;
+  // You can add other user-specific fields here, for example:
+  // dateJoined: Date;
+  // isHost: boolean;
+}
