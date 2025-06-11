@@ -2,19 +2,18 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "next/navigation"; // Import useRouter
 import { useEffect } from "react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Loader2, UserCog, Mail, Briefcase, Home } from "lucide-react";
+import { Loader2, UserCog, Mail, Briefcase, Home, Settings } from "lucide-react"; // Added Settings
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
-// Helper function for initials (can be moved to utils if used elsewhere)
 const getInitials = (name?: string | null) => {
-  if (!name) return "U"; // User
+  if (!name) return "U"; 
   const names = name.split(" ");
   if (names.length === 1) return names[0].substring(0, 2).toUpperCase();
   return (names[0][0] + (names[names.length - 1][0] || "")).toUpperCase();
@@ -22,11 +21,11 @@ const getInitials = (name?: string | null) => {
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
-  const router = useRouter();
+  const router = useRouter(); // Initialize useRouter
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      router.replace("/login?callbackUrl=/dashboard"); // Use replace to avoid adding to history
+      router.replace("/login?callbackUrl=/dashboard"); 
     }
   }, [status, router]);
 
@@ -43,8 +42,6 @@ export default function DashboardPage() {
   }
 
   if (!session || !session.user) {
-    // This case handles scenarios where status might not yet be 'unauthenticated'
-    // but session data is not available.
     return (
        <div className="flex flex-col min-h-screen">
         <Header />
@@ -96,7 +93,7 @@ export default function DashboardPage() {
                     <span className="font-medium w-24 shrink-0">Email:</span> 
                     <span className="text-muted-foreground">{user.email || "N/A"}</span>
                   </div>
-                   {user.id && ( // Assuming user.id is available from the session
+                   {user.id && (
                      <div className="flex items-center">
                        <span className="font-medium w-24 shrink-0">User ID:</span> 
                        <span className="text-xs text-muted-foreground">{user.id}</span>
@@ -146,8 +143,10 @@ export default function DashboardPage() {
               </div>
             </CardContent>
             <CardFooter className="p-6 md:p-8 border-t bg-muted/30">
-               <Button variant="ghost" className="mx-auto text-muted-foreground hover:text-primary" onClick={() => alert("Edit profile functionality is coming soon!")}>
-                  <UserCog className="mr-2 h-4 w-4" /> Edit Profile (Coming Soon)
+               <Button variant="ghost" className="mx-auto text-muted-foreground hover:text-primary" asChild>
+                  <Link href="/dashboard/edit-profile">
+                    <Settings className="mr-2 h-4 w-4" /> Edit Profile
+                  </Link>
                 </Button>
             </CardFooter>
           </Card>
@@ -157,4 +156,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
