@@ -14,11 +14,11 @@ import { useForm, SubmitHandler, Controller, useFieldArray } from 'react-hook-fo
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { ImagePlus, Loader2, Trash2, AlertCircle } from 'lucide-react';
+import UploadPage from '../upload/page';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import Image from 'next/image'; // For previewing images
+
 
 const MAX_IMAGES = 5;
 const MAX_FILE_SIZE_MB = 5;
@@ -389,73 +389,7 @@ export default function ListPropertyPage() {
                 </div>
 
                 <div className="space-y-4">
-                    <Label htmlFor="image-upload-input">Property Images (at least 1, max {MAX_IMAGES}, {MAX_FILE_SIZE_MB}MB per file)</Label>
-                    <Input
-                      id="image-upload-input"
-                      key={fileInputKey}
-                      type="file"
-                      multiple
-                      accept="image/png, image/jpeg, image/gif, image/webp"
-                      onChange={handleFileChange}
-                      className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
-                      disabled={formIsLoading || imageUploadStates.filter(s => s.cloudinaryUrl).length >= MAX_IMAGES}
-                    />
-                     {errors.images && errors.images.message && <p className="text-sm text-destructive">{errors.images.message}</p>}
-                     {errors.images?.root?.message && <p className="text-sm text-destructive">{errors.images.root.message}</p>}
-
-
-                    {imageUploadStates.length > 0 && (
-                        <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-                            {imageUploadStates.map((upload, index) => (
-                                <div key={index} className="relative aspect-square rounded-md overflow-hidden border group shadow-sm">
-                                    {upload.previewUrl ? (
-                                        <Image
-                                            src={upload.previewUrl}
-                                            alt={`Preview ${index + 1}`}
-                                            fill
-                                            sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, 20vw"
-                                            className="object-cover"
-                                         />
-                                    ) : (
-                                        <div className="w-full h-full bg-muted flex items-center justify-center">
-                                            <ImagePlus className="h-8 w-8 text-muted-foreground" />
-                                        </div>
-                                    )}
-                                    {!upload.isLoading && (
-                                      <Button
-                                        type="button"
-                                        variant="destructive"
-                                        size="icon"
-                                        className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                                        onClick={() => removeImage(index)}
-                                        disabled={formIsLoading}
-                                        title="Remove image"
-                                      >
-                                        <Trash2 className="h-3 w-3" />
-                                      </Button>
-                                    )}
-                                     {upload.isLoading && (
-                                        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                                            <Loader2 className="h-8 w-8 animate-spin text-white" />
-                                        </div>
-                                    )}
-                                    {upload.error && !upload.isLoading && (
-                                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-destructive/70 p-1">
-                                        <AlertCircle className="h-6 w-6 text-destructive-foreground mb-1" />
-                                        <p className="text-destructive-foreground text-xs text-center truncate" title={upload.error}>
-                                          {upload.error.length > 30 ? upload.error.substring(0,27) + "..." : upload.error}
-                                        </p>
-                                      </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                     {imageUploadStates.filter(s => s.cloudinaryUrl).length < MAX_IMAGES && (
-                        <p className="text-xs text-muted-foreground">
-                          You can add {MAX_IMAGES - imageUploadStates.filter(s => s.cloudinaryUrl).length} more image(s).
-                        </p>
-                    )}
+<UploadPage />
                 </div>
 
 

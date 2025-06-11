@@ -5,6 +5,7 @@ import PropertyList from '@/components/property/PropertyList';
 import { Suspense } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 
+
 const PropertyListSkeleton = () => (
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
     {[...Array(8)].map((_, i) => (
@@ -43,6 +44,7 @@ export default function HomePage() {
         <Suspense fallback={<PropertyListSkeleton />}>
           <PropertyList />
         </Suspense>
+       
       </main>
       <Footer />
     </div>
