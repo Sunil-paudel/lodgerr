@@ -1,134 +1,132 @@
-
 import NextAuth, { type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import User from "@/models/User"; 
-import connectDB from "@/utils/db"; 
+import User from "@/models/User";
+import connectDB from "@/utils/db"; // This import should now correctly find connectDB
 import bcrypt from "bcryptjs";
 
+
 export const authOptions: NextAuthOptions = {
-  providers: [
-    CredentialsProvider({
-      name: "Credentials",
-      credentials: {
-        email: { label: "Email", type: "text", placeholder: "jsmith@example.com" },
-        password: { label: "Password", type: "password" },
-      },
-      async authorize(credentials) {
-        console.log("[NextAuth Authorize] Processing credentials for:", credentials?.email);
-        if (!credentials?.email || !credentials?.password) {
-          console.log("[NextAuth Authorize] Missing email or password in credentials");
-          throw new Error("Please enter both email and password.");
-        }
-        
-        try {
-          console.log("[NextAuth Authorize] Attempting DB connection for user:", credentials.email);
-          await connectDB();
-          console.log("[NextAuth Authorize] DB connection successful (or already connected).");
+ providers: [
+   CredentialsProvider({
+     name: "Credentials", // This name is fine, it's for display purposes if you have multiple providers
+     credentials: {
+       email: { label: "Email", type: "text", placeholder: "jsmith@example.com" },
+       password: { label: "Password", type: "password" },
+     },
+     async authorize(credentials) {
+       console.log("[NextAuth Authorize] Entered authorize callback with credentials:", credentials ? { email: credentials.email, password_exists: !!credentials.password } : "null_credentials");
 
-          const user = await User.findOne({ email: credentials.email });
+       if (!credentials?.email || !credentials?.password) {
+         console.log("[NextAuth Authorize] Missing email or password in credentials.");
+         throw new Error("Please enter both email and password.");
+       }
+       
+       console.log("[NextAuth Authorize] Attempting DB connection for user:", credentials.email);
+       try {
+         await connectDB(); // This should now correctly call the renamed function
+         console.log("[NextAuth Authorize] DB connection successful (or already connected).");
 
-          if (!user) {
-            console.log("[NextAuth Authorize] No user found with email:", credentials.email);
-            throw new Error("No user found with this email.");
-          }
-          console.log("[NextAuth Authorize] User found:", user.email);
+         const user = await User.findOne({ email: credentials.email });
 
-          if (!user.passwordHash) {
-            console.log("[NextAuth Authorize] User account not configured for password login (no passwordHash):", credentials.email);
-            throw new Error("User account is not properly configured for password login.");
-          }
+         if (!user) {
+           console.log("[NextAuth Authorize] No user found with email:", credentials.email);
+           throw new Error("No user found with this email.");
+         }
 
-          const isPasswordCorrect = await bcrypt.compare(
-            credentials.password,
-            user.passwordHash
-          );
+         if (!user.passwordHash) {
+           console.log("[NextAuth Authorize] User account not configured for password login (no passwordHash):", credentials.email);
+           throw new Error("User account is not properly configured for password login.");
+         }
 
-          if (!isPasswordCorrect) {
-            console.log("[NextAuth Authorize] Incorrect password for email:", credentials.email);
-            throw new Error("Invalid password.");
-          }
+         const isPasswordCorrect = await bcrypt.compare(
+           credentials.password,
+           user.passwordHash
+         );
 
-          const userToReturn = {
-            id: user._id.toString(),
-            name: user.name,
-            email: user.email,
-            image: user.avatarUrl, 
-            role: user.role,
-          };
-          console.log("[NextAuth Authorize] User authenticated successfully, returning:", userToReturn);
-          return userToReturn;
+         if (!isPasswordCorrect) {
+           console.log("[NextAuth Authorize] Incorrect password for email:", credentials.email);
+           throw new Error("Invalid password.");
+         }
 
-        } catch (error: any) {
-          console.error("[NextAuth Authorize] Critical error in authorize callback:", error.message);
-          console.error("[NextAuth Authorize] Full error details:", error); 
-          
-          if (error.message && (error.message === "Connection failed!" || error.message.startsWith("Database connection failed:"))) {
-             throw new Error("Database connection error. Please try again later.");
-          }
-          // Ensure we always throw an actual Error object for NextAuth to handle
-          if (error instanceof Error) {
-            throw error; // Re-throw the original error if it's already an Error instance
-          } else {
-            throw new Error(String(error) || "Authentication failed due to an unknown server error.");
-          }
-        }
-      },
-    }),
-  ],
-  session: {
-    strategy: "jwt",
-  },
-  callbacks: {
-    async jwt({ token, user, trigger, session }) {
-      try {
-        // console.log("[NextAuth JWT] Invoked. Trigger:", trigger, "User:", user ? user.id : 'No user', "Token:", token);
+         console.log("[NextAuth Authorize] User authenticated successfully:", credentials.email, "User ID:", user._id.toString());
+         // Ensure the returned object matches the User interface expected by NextAuth
+         return {
+           id: user._id.toString(), // Mongoose _id
+           name: user.name,
+           email: user.email,
+           image: user.avatarUrl, // Map avatarUrl to image
+           role: user.role,
+         };
+       } catch (error: any) {
+         console.error("[NextAuth Authorize] Error during authorization process:", error.message);
+         console.error("[NextAuth Authorize] Full error details:", error);
+
+         // Check for specific error messages to pass them through cleanly
+         // These are messages that are already user-friendly or indicative of the problem.
+         if (error.message && (
+             error.message.startsWith("Database connection failed:") ||
+             error.message.startsWith("Server configuration error:") ||
+             error.message === "No user found with this email." ||
+             error.message === "Invalid password." ||
+             error.message === "User account is not properly configured for password login." ||
+             error.message === "Please enter both email and password."
+            )) {
+            throw error; // Re-throw the original Error object
+         }
+
+         // For other, unexpected errors, provide a generic message.
+         throw new Error("Authentication failed due to an unexpected server issue. Please try again.");
+       }
+     },
+   }),
+ ],
+ session: {
+   strategy: "jwt",
+ },
+ callbacks: {
+   async jwt({ token, user, trigger, session }) {
+     try {
         if (trigger === "update" && session?.user) {
-          console.log("[NextAuth JWT] Updating token from session update");
-          token.name = session.user.name;
-          token.email = session.user.email;
-          token.picture = session.user.image; 
-          token.role = session.user.role;
+            token.name = session.user.name;
+            token.email = session.user.email;
+            token.picture = session.user.image;
+            token.role = session.user.role; 
         }
-        if (user) { // This `user` object comes from the `authorize` callback on initial sign-in
-          console.log("[NextAuth JWT] Populating token from user object (initial sign-in)");
-          token.id = user.id;
-          token.name = user.name;
-          token.email = user.email;
-          token.picture = user.image; 
-          token.role = user.role;
+        // If user object exists (it's passed on initial sign in)
+        if (user) {
+            token.id = user.id;
+            token.name = user.name;
+            token.email = user.email;
+            token.picture = user.image; // 'image' from authorize becomes 'picture' in JWT
+            token.role = user.role;
         }
-        // console.log("[NextAuth JWT] Returning token:", token);
-        return token;
-      } catch (e: any) {
-        console.error("[NextAuth JWT] Error in JWT callback:", e.message, e);
-        // It's better to throw an error here and let NextAuth handle it,
-        // which might result in a generic error on the client but avoids malformed tokens/sessions.
-        throw new Error("Error processing JWT. Please try again.");
-      }
-    },
-    async session({ session, token }) {
-      try {
-        // console.log("[NextAuth Session] Invoked. Token:", token, "Session:", session);
+     } catch (error: any) {
+        console.error("[NextAuth JWT Callback] Error:", error.message, error.stack);
+        // Decide if you want to throw or handle, for now, just log and return token to prevent breaking session
+     }
+     return token;
+   },
+   async session({ session, token }) {
+     try {
         if (token && session.user) { 
-          session.user.id = token.id as string;
-          session.user.name = token.name as string | null | undefined;
-          session.user.email = token.email as string | null | undefined;
-          session.user.image = token.picture as string | null | undefined; 
-          session.user.role = token.role as string | null | undefined; 
+            session.user.id = token.id as string;
+            session.user.name = token.name as string | null | undefined;
+            session.user.email = token.email as string | null | undefined;
+            session.user.image = token.picture as string | null | undefined; // 'picture' from JWT becomes 'image' in session
+            session.user.role = token.role as string | null | undefined; 
         }
-        // console.log("[NextAuth Session] Returning session:", session);
-        return session;
-      } catch (e: any) {
-        console.error("[NextAuth Session] Error in session callback:", e.message, e);
-        throw new Error("Error constructing session. Please try again.");
-      }
-    },
-  },
-  pages: {
-    error: "/login", 
-    signIn: '/login', 
-  },
-  secret: process.env.NEXTAUTH_SECRET,
+     } catch (error: any) {
+        console.error("[NextAuth Session Callback] Error:", error.message, error.stack);
+        // Decide if you want to throw or handle, for now, just log and return session
+     }
+     return session;
+   },
+ },
+ pages: {
+   error: "/login", // Error code passed in query string as ?error=
+   signIn: '/login', // Redirect here for sign in
+ },
+ secret: process.env.NEXTAUTH_SECRET, // Make sure this is set in your .env.local
 };
 
 const handler = NextAuth(authOptions);
