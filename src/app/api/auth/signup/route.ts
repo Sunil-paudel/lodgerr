@@ -15,8 +15,10 @@ export const POST = async (request: NextRequest) => {
         { status: 400 }
       );
     }
-
+    console.log("Signup API: Attempting DB connection for signup.");
     await connect();
+    console.log("Signup API: DB connection successful (or already connected).");
+
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -27,18 +29,18 @@ export const POST = async (request: NextRequest) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 5);
-    console.log("Generated hashedPassword:", hashedPassword); // DEBUG LOG
+    console.log("Generated hashedPassword:", hashedPassword); 
 
     const newUser = new User({
       name: fullName,
       email,
-      passwordHash: hashedPassword, // Corrected field name to match schema
+      passwordHash: hashedPassword, 
     });
 
-    console.log("New user object before save:", JSON.stringify(newUser.toObject(), null, 2)); // DEBUG LOG
+    console.log("New user object before save:", JSON.stringify(newUser.toObject(), null, 2)); 
 
     await newUser.save();
-    console.log("User saved successfully."); // DEBUG LOG
+    console.log("User saved successfully."); 
 
     // Sending confirmation email
     try {
@@ -84,9 +86,9 @@ export const POST = async (request: NextRequest) => {
         errorDetails = JSON.stringify(err);
     }
     
-    if (errorMessage === "Connection failed!") {
+    if (errorMessage.startsWith("Database connection failed:") || errorMessage === "Server configuration error: MONGODB_URI is not defined.") {
          return NextResponse.json(
-            { message: "Server error during signup.", error: "Connection failed!", details: err.stack || "No stack available." },
+            { message: "Server error: Could not connect to the database.", error: errorMessage, details: err.stack || "No stack available." },
             { status: 500 }
         );
     }
