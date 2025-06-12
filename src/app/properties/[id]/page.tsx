@@ -37,6 +37,8 @@ interface BookingPriceDetails {
   totalPrice: number;
 }
 
+type ActiveBookingRange = { startDate: string; endDate: string };
+
 
 const PropertyDetailsPage = () => {
   const params = useParams();
@@ -52,6 +54,7 @@ const PropertyDetailsPage = () => {
   const [selectedDateRange, setSelectedDateRange] = useState<DateRange | undefined>(undefined);
   const [availabilityText, setAvailabilityText] = useState<string | null>(null);
   const [currentBookingPriceDetails, setCurrentBookingPriceDetails] = useState<BookingPriceDetails | null>(null);
+  const [activeBookings, setActiveBookings] = useState<ActiveBookingRange[] | null>(null);
 
 
   useEffect(() => {
@@ -63,6 +66,9 @@ const PropertyDetailsPage = () => {
       }
       setIsLoading(true);
       setPageError(null);
+      setProperty(null); // Reset property on new ID
+      setActiveBookings(null); // Reset active bookings
+
       try {
         const response = await fetch(`/api/properties/${propertyId}`);
         if (!response.ok) {
@@ -84,6 +90,28 @@ const PropertyDetailsPage = () => {
 
     fetchProperty();
   }, [propertyId]);
+
+  useEffect(() => {
+    if (property && property.id) {
+      const fetchActiveBookingsForProperty = async () => {
+        try {
+          const response = await fetch(`/api/properties/${property.id}/active-bookings`);
+          if (!response.ok) {
+            console.warn(`Failed to fetch active bookings for ${property.id}: ${response.status}`);
+            setActiveBookings([]); 
+            return;
+          }
+          const data = await response.json();
+          setActiveBookings(data);
+        } catch (error) {
+          console.error("Error fetching active bookings:", error);
+          setActiveBookings([]);
+        }
+      };
+      fetchActiveBookingsForProperty();
+    }
+  }, [property]);
+
 
   useEffect(() => {
     if (property) {
@@ -192,7 +220,23 @@ const PropertyDetailsPage = () => {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || "Failed to initiate booking payment.");
+        if (response.status === 409) { // Conflict, dates likely taken
+            toast({
+                title: "Dates No Longer Available",
+                description: result.message || "The selected dates have just been booked. Please choose different dates.",
+                variant: "destructive",
+            });
+            setSelectedDateRange(undefined); // Clear selection
+            setCurrentBookingPriceDetails(null);
+            // Optionally, refresh active bookings here if desired
+            if (property && property.id) {
+              const bookingsResponse = await fetch(`/api/properties/${property.id}/active-bookings`);
+              if (bookingsResponse.ok) setActiveBookings(await bookingsResponse.json());
+            }
+        } else {
+            throw new Error(result.message || "Failed to initiate booking payment.");
+        }
+        return; // Stop further processing
       }
       
       const stripe = await stripePromise;
@@ -213,6 +257,7 @@ const PropertyDetailsPage = () => {
         description: error.message || "An unexpected error occurred.",
         variant: "destructive",
       });
+    } finally {
       setIsBookingLoading(false);
     } 
   };
@@ -432,6 +477,7 @@ const PropertyDetailsPage = () => {
                   pricePeriod={property.pricePeriod} 
                   availableFrom={property.availableFrom}
                   availableTo={property.availableTo}
+                  activeBookings={activeBookings} // Pass active bookings
                 />
               </div>
               
