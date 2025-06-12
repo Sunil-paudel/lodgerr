@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { Calendar } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
 import type { DateRange } from "react-day-picker";
-import { addDays, startOfDay, differenceInCalendarDays, differenceInCalendarWeeks, differenceInCalendarMonths, isBefore, isAfter, isValid } from 'date-fns';
+import { startOfDay, differenceInCalendarDays, isBefore, isAfter, isValid, parseISO } from 'date-fns';
 import type { Property } from '@/lib/types';
 
 interface PropertyBookingCalendarProps {
@@ -13,8 +13,8 @@ interface PropertyBookingCalendarProps {
   onDateChange: (range: DateRange | undefined) => void;
   price: number;
   pricePeriod: Property['pricePeriod'];
-  availableFrom?: Date; // Property's general start availability
-  availableTo?: Date;   // Property's general end availability
+  availableFrom?: Date | string; // Property's general start availability
+  availableTo?: Date | string;   // Property's general end availability
 }
 
 export function PropertyBookingCalendar({
@@ -25,9 +25,26 @@ export function PropertyBookingCalendar({
   availableFrom,
   availableTo
 }: PropertyBookingCalendarProps) {
+
+  // Log received props for debugging
+  // console.log("[BookingCalendar] Received Props: availableFrom:", availableFrom, "type:", typeof availableFrom, "isValid:", availableFrom ? isValid(new Date(availableFrom)) : 'N/A');
+  // console.log("[BookingCalendar] Received Props: availableTo:", availableTo, "type:", typeof availableTo, "isValid:", availableTo ? isValid(new Date(availableTo)) : 'N/A');
+
+  const processDateProp = (dateProp?: Date | string): Date | null => {
+    if (!dateProp) return null;
+    const date = typeof dateProp === 'string' ? parseISO(dateProp) : dateProp;
+    return isValid(date) ? startOfDay(date) : null;
+  };
+
+  const normAvailableFrom = processDateProp(availableFrom);
+  const normAvailableTo = processDateProp(availableTo);
+
+  // console.log("[BookingCalendar] Normalized Dates: normAvailableFrom:", normAvailableFrom, "normAvailableTo:", normAvailableTo);
+
+
   const [currentMonth, setCurrentMonth] = useState<Date>(
     selectedRange?.from && isValid(selectedRange.from) ? selectedRange.from :
-    availableFrom && isValid(availableFrom) ? availableFrom :
+    normAvailableFrom && isValid(normAvailableFrom) ? normAvailableFrom :
     startOfDay(new Date())
   );
   const [calculatedPrice, setCalculatedPrice] = useState<number | null>(null);
@@ -38,26 +55,32 @@ export function PropertyBookingCalendar({
       const from = startOfDay(selectedRange.from);
       const to = startOfDay(selectedRange.to);
 
-      if (isBefore(to, from)) { // Ensure 'to' date is not before 'from' date
+      if (isBefore(to, from)) { 
           setCalculatedPrice(null);
           return;
       }
 
       let numUnits = 0;
-
       if (pricePeriod === 'nightly') {
         numUnits = differenceInCalendarDays(to, from);
       } else if (pricePeriod === 'weekly') {
         numUnits = differenceInCalendarDays(to, from) / 7;
       } else if (pricePeriod === 'monthly') {
-        // Approximate, or use a library for more precise month diff if needed
         numUnits = differenceInCalendarDays(to, from) / 30;
       }
 
       if (numUnits > 0) {
         setCalculatedPrice(price * numUnits);
       } else if (pricePeriod === 'nightly' && differenceInCalendarDays(to, from) === 0) {
-        setCalculatedPrice(price); // Assume 1 night for same-day checkout
+         // For nightly, if check-in and check-out are same day, it implies 0 nights by diff.
+         // Depending on policy, this could be 1 night or not allowed.
+         // For simplicity, let's assume it means at least 1 unit of price if it's a valid selection.
+         // This part might need refinement based on business logic for 0-day diffs.
+         if (from.getTime() === to.getTime()) { // Strictly same day means 0 nights for calculation
+            setCalculatedPrice(price); // Or handle as min 1 night's price if checkout isn't immediate
+         } else {
+            setCalculatedPrice(null);
+         }
       } else {
         setCalculatedPrice(null);
       }
@@ -69,14 +92,9 @@ export function PropertyBookingCalendar({
   const disabledDaysFunc = (dateToTest: Date): boolean => {
     const dateAtMidnight = startOfDay(dateToTest);
 
-    if (!isValid(dateAtMidnight)) return true; // Disable invalid dates
+    if (!isValid(dateAtMidnight)) return true; 
 
-    // Disable dates before today
     if (dateAtMidnight < today) return true;
-
-    // Disable dates outside the host-defined general availability window
-    const normAvailableFrom = availableFrom && isValid(new Date(availableFrom)) ? startOfDay(new Date(availableFrom)) : null;
-    const normAvailableTo = availableTo && isValid(new Date(availableTo)) ? startOfDay(new Date(availableTo)) : null;
 
     if (normAvailableFrom && isBefore(dateAtMidnight, normAvailableFrom)) return true;
     if (normAvailableTo && isAfter(dateAtMidnight, normAvailableTo)) return true;
@@ -101,9 +119,6 @@ export function PropertyBookingCalendar({
     }
   }
   
-  // For debugging: Log the availableTo date received by the component
-  // console.log("[BookingCalendar] Received availableFrom:", availableFrom, "Received availableTo:", availableTo);
-
   return (
     <div className="space-y-2">
       <Label htmlFor="booking-dates" className="text-sm font-medium">Select Dates</Label>
@@ -117,12 +132,8 @@ export function PropertyBookingCalendar({
         numberOfMonths={1}
         disabled={disabledDaysFunc}
         className="rounded-md border shadow-sm bg-background"
-        fromDate={
-          availableFrom && isValid(new Date(availableFrom)) && isAfter(new Date(availableFrom), today)
-            ? new Date(availableFrom)
-            : today
-        }
-        toDate={availableTo && isValid(new Date(availableTo)) ? new Date(availableTo) : undefined}
+        fromDate={ normAvailableFrom && isAfter(normAvailableFrom, today) ? normAvailableFrom : today }
+        toDate={normAvailableTo || undefined} // Use the normalized 'availableTo' for the calendar's toDate prop
         footer={
           <div className="pt-2 space-y-1 text-sm">
             <p className="text-muted-foreground">{footerText}</p>
