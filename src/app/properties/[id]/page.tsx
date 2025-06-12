@@ -1,18 +1,15 @@
 
-"use client"; // This page now needs to be a client component for state and interactions
+"use client"; 
 
 import Image from 'next/image';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
 import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, Home as HomeIcon, ImageIcon, UserCircle, Calendar as CalendarIconLucide, DollarSign, Wifi, Loader2 } from 'lucide-react';
-// Metadata is now handled differently for client components, or can be fetched in a server component parent
-// import type { Metadata } from 'next'; 
 import { PropertyAmenityIcon } from '@/components/property/PropertyAmenityIcon';
 import Link from 'next/link';
-import { useSession } from 'next-auth/react'; // Changed from getServerSession
+import { useSession } from 'next-auth/react';
 import type { Property as PropertyType } from '@/lib/types';
-import mongoose from 'mongoose'; // Keep for type checking if needed, but not for direct DB calls here
 import { PropertyBookingCalendar } from '@/components/property/PropertyBookingCalendar';
 import {
   Carousel,
@@ -21,16 +18,12 @@ import {
   CarouselNext,
   CarouselPrevious,
 } from "@/components/ui/carousel";
-import { useParams, useRouter } from 'next/navigation'; // For client components
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import type { DateRange } from 'react-day-picker';
 import { format, isValid as isValidDate } from 'date-fns';
-
-
-// Metadata generation for client components should be handled differently.
-// For now, we'll set a generic title or fetch it within useEffect.
-// export async function generateMetadata({ params }: PropertyDetailsPageProps): Promise<Metadata> { ... }
+import { Skeleton } from '@/components/ui/skeleton';
 
 
 const PropertyDetailsPage = () => {
@@ -45,6 +38,7 @@ const PropertyDetailsPage = () => {
   const [pageError, setPageError] = useState<string | null>(null);
   const [isBookingLoading, setIsBookingLoading] = useState(false);
   const [selectedDateRange, setSelectedDateRange] = useState<DateRange | undefined>(undefined);
+  const [availabilityText, setAvailabilityText] = useState<string | null>(null);
 
 
   useEffect(() => {
@@ -77,6 +71,25 @@ const PropertyDetailsPage = () => {
 
     fetchProperty();
   }, [propertyId]);
+
+  useEffect(() => {
+    if (property) {
+      const fromDate = property.availableFrom && isValidDate(new Date(property.availableFrom)) ? new Date(property.availableFrom) : null;
+      const toDate = property.availableTo && isValidDate(new Date(property.availableTo)) ? new Date(property.availableTo) : null;
+      let text = "";
+      if (fromDate && toDate) {
+          text = `Available from ${format(fromDate, 'LLL dd, yyyy')} to ${format(toDate, 'LLL dd, yyyy')}`;
+      } else if (fromDate) {
+          text = `Available from ${format(fromDate, 'LLL dd, yyyy')}`;
+      } else if (toDate) {
+          text = `Available until ${format(toDate, 'LLL dd, yyyy')}`;
+      }
+      setAvailabilityText(text || null); // Set to null if empty to distinguish from initial loading state
+    } else {
+      setAvailabilityText(null);
+    }
+  }, [property]);
+
 
   const handleReserve = async () => {
     if (authStatus === "unauthenticated" || !session?.user) {
@@ -113,8 +126,7 @@ const PropertyDetailsPage = () => {
         title: "Booking Request Sent!",
         description: result.message || "Your booking request has been sent and is pending confirmation.",
       });
-      setSelectedDateRange(undefined); // Clear dates after successful booking
-      // Optionally, redirect to a "my bookings" page or refresh data
+      setSelectedDateRange(undefined); 
     } catch (error: any) {
       toast({
         title: "Booking Failed",
@@ -188,18 +200,6 @@ const PropertyDetailsPage = () => {
 
   const hasImages = property.images && property.images.length > 0;
 
-  const formattedAvailableFrom = property.availableFrom && isValidDate(new Date(property.availableFrom)) ? format(new Date(property.availableFrom), 'LLL dd, yyyy') : null;
-  const formattedAvailableTo = property.availableTo && isValidDate(new Date(property.availableTo)) ? format(new Date(property.availableTo), 'LLL dd, yyyy') : null;
-  let availabilityText = "";
-  if (formattedAvailableFrom && formattedAvailableTo) {
-    availabilityText = `Available from ${formattedAvailableFrom} to ${formattedAvailableTo}`;
-  } else if (formattedAvailableFrom) {
-    availabilityText = `Available from ${formattedAvailableFrom}`;
-  } else if (formattedAvailableTo) {
-    availabilityText = `Available until ${formattedAvailableTo}`;
-  }
-
-
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <Header />
@@ -230,7 +230,7 @@ const PropertyDetailsPage = () => {
 
         <div className="mb-8">
           {hasImages ? (
-            <Carousel opts={{ align: "start", loop: true }} className="w-full max-w-4xl mx-auto">
+            <Carousel opts={{ align: "start", loop: property.images.length > 1 }} className="w-full max-w-4xl mx-auto">
               <CarouselContent>
                 {property.images.map((imgUrl, index) => (
                   <CarouselItem key={index} className="md:basis-full">
@@ -284,7 +284,16 @@ const PropertyDetailsPage = () => {
                 </div>
             </div>
 
-            {availabilityText && (
+            {availabilityText === null && !isLoading ? ( // Show skeleton only if not loading and text is not yet computed
+                <div className="py-6 border-b border-border">
+                    <h3 className="text-xl font-semibold mb-2 font-headline flex items-center">
+                        <CalendarIconLucide size={20} className="mr-2 text-primary" />
+                        Host-Defined Availability
+                    </h3>
+                    <Skeleton className="h-5 w-3/4 my-1" />
+                    <Skeleton className="h-4 w-full mt-1" />
+                </div>
+            ) : availabilityText ? (
               <div className="py-6 border-b border-border">
                 <h3 className="text-xl font-semibold mb-2 font-headline flex items-center">
                   <CalendarIconLucide size={20} className="mr-2 text-primary" />
@@ -295,7 +304,8 @@ const PropertyDetailsPage = () => {
                   Note: Specific dates within this period might already be booked. Please check the calendar below.
                 </p>
               </div>
-            )}
+            ) : null}
+
 
             <div className="py-6 border-b border-border">
               <h3 className="text-xl font-semibold mb-3 font-headline">About this place</h3>
@@ -337,9 +347,8 @@ const PropertyDetailsPage = () => {
                   onDateChange={setSelectedDateRange}
                   price={property.price}
                   pricePeriod={property.pricePeriod}
-                  // Pass property's availability window to the calendar to restrict selectable dates
-                  availableFrom={property.availableFrom ? new Date(property.availableFrom) : undefined}
-                  availableTo={property.availableTo ? new Date(property.availableTo) : undefined}
+                  availableFrom={property.availableFrom}
+                  availableTo={property.availableTo}
                 />
               </div>
 
@@ -363,5 +372,3 @@ const PropertyDetailsPage = () => {
 };
 
 export default PropertyDetailsPage;
-
-    
