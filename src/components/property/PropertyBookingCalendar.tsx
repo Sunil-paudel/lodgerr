@@ -15,8 +15,8 @@ interface PropertyBookingCalendarProps {
   onDateChange: (range: DateRange | undefined) => void;
   price: number;
   pricePeriod: Property['pricePeriod'];
-  availableFrom?: Date | string; 
-  availableTo?: Date | string;  
+  availableFrom?: Date | string;
+  availableTo?: Date | string;
   activeBookings?: ActiveBookingRange[] | null; // New prop
 }
 
@@ -27,7 +27,7 @@ export function PropertyBookingCalendar({
   pricePeriod,
   availableFrom,
   availableTo,
-  activeBookings 
+  activeBookings
 }: PropertyBookingCalendarProps) {
 
   const processDateProp = (dateProp?: Date | string): Date | null => {
@@ -52,7 +52,7 @@ export function PropertyBookingCalendar({
       const from = startOfDay(selectedRange.from);
       const to = startOfDay(selectedRange.to);
 
-      if (isBefore(to, from)) { 
+      if (isBefore(to, from)) {
           setCalculatedPrice(null);
           return;
       }
@@ -60,7 +60,7 @@ export function PropertyBookingCalendar({
       let numUnits = 0;
       if (pricePeriod === 'nightly') {
         numUnits = differenceInCalendarDays(to, from);
-        if (numUnits === 0 && isSameDay(from, to)) { // If same day selection, count as 1 night for display. API will handle actual logic.
+        if (numUnits === 0 && isSameDay(from, to)) {
             numUnits = 1;
         }
       } else if (pricePeriod === 'weekly') {
@@ -82,7 +82,7 @@ export function PropertyBookingCalendar({
   const disabledDaysFunc = (dateToTest: Date): boolean => {
     const dateAtMidnight = startOfDay(dateToTest);
 
-    if (!isValid(dateAtMidnight)) return true; 
+    if (!isValid(dateAtMidnight)) return true;
     if (isBefore(dateAtMidnight, today)) return true;
 
     if (normAvailableFrom && isBefore(dateAtMidnight, normAvailableFrom)) return true;
@@ -93,8 +93,6 @@ export function PropertyBookingCalendar({
         const bookingStart = startOfDay(parseISO(booking.startDate));
         const bookingEnd = startOfDay(parseISO(booking.endDate));
         if (isValid(bookingStart) && isValid(bookingEnd)) {
-          // A date is disabled if it's within an existing booking range
-          // (inclusive start, exclusive end - meaning dates from bookingStart up to, but not including, bookingEnd)
           if (dateAtMidnight >= bookingStart && dateAtMidnight < bookingEnd) {
             return true;
           }
@@ -120,11 +118,16 @@ export function PropertyBookingCalendar({
         footerText = `Selected check-in: ${format(selectedRange.from, 'LLL dd, yyyy')}. Now select check-out.`;
     }
   }
-  
+
+  // Create a key for the Calendar that changes when activeBookings status changes
+  // from loading (null) to loaded (array), or when the number of bookings changes.
+  const calendarKey = activeBookings === null ? 'loading-bookings' : `loaded-bookings-${activeBookings.length}`;
+
   return (
     <div className="space-y-2">
       <Label htmlFor="booking-dates" className="text-sm font-medium">Select Dates</Label>
       <Calendar
+        key={calendarKey} // Add key here to force re-evaluation when activeBookings change
         id="booking-dates"
         mode="range"
         selected={selectedRange}
@@ -137,7 +140,7 @@ export function PropertyBookingCalendar({
         fromDate={ normAvailableFrom && isAfter(normAvailableFrom, today) ? normAvailableFrom : today }
         toDate={normAvailableTo || undefined}
         footer={
-          activeBookings === null ? ( // Show loading state for footer if activeBookings are being fetched
+          activeBookings === null ? (
             <div className="pt-2 space-y-1 text-sm text-muted-foreground">
                 Loading availability...
             </div>
