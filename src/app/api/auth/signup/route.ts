@@ -27,7 +27,7 @@ export const POST = async (request: NextRequest) => {
 
     if (existingUser) {
       // This block should ONLY be hit if the email already exists
-      console.log("[Signup API] Found existing user with this email:", existingUser);
+      console.log("[Signup API] Found existing user with this email:", existingUser.toObject());
       return NextResponse.json(
         { message: "This email address is already registered. Please use a different email or log in." },
         { status: 409 } // Conflict - for duplicate email
@@ -42,12 +42,22 @@ export const POST = async (request: NextRequest) => {
       name: fullName,
       email,
       passwordHash: hashedPassword,
-      // role defaults to 'guest' as per schema
+      // role defaults to 'guest' as per schema in User model
+      // Mongoose will automatically generate a unique '_id'
+      // No 'id' field is set here.
     });
 
-    console.log("[Signup API] Attempting to save new user object:", newUser.toObject());
+    // Log the object just before saving to ensure no unexpected 'id' field is present
+    const userObjectToSave = newUser.toObject();
+    if ('id' in userObjectToSave) {
+        console.warn("[Signup API] Warning: 'id' field present on newUser object before save. This is unexpected as Mongoose uses '_id'. Object:", userObjectToSave);
+    } else {
+        console.log("[Signup API] New user object structure is as expected (no 'id' field, relies on '_id').");
+    }
+    console.log("[Signup API] Attempting to save new user object:", userObjectToSave);
+    
     await newUser.save();
-    console.log("[Signup API] User saved successfully:", { id: newUser._id, email: newUser.email });
+    console.log("[Signup API] User saved successfully:", { _id: newUser._id, email: newUser.email });
 
     return NextResponse.json(
       { message: "User created successfully. You can now log in." },
@@ -56,30 +66,29 @@ export const POST = async (request: NextRequest) => {
   } catch (err: any) {
     console.error("[Signup API] Error during signup process:", err);
 
-    // Check for MongoDB duplicate key error (code 11000) specifically for email
-    if (err.code === 11000 && err.keyPattern?.email) {
-      console.log("[Signup API] MongoDB duplicate key error for email:", email);
+    // Check for MongoDB duplicate key error (code 11000)
+    if (err.code === 11000) {
+      let DMessage = "A user with some of these details already exists. Please check your input.";
+      console.log("[Signup API] MongoDB duplicate key error (E11000). Key pattern:", err.keyPattern);
+      if (err.keyPattern) {
+          const conflictingFields = Object.keys(err.keyPattern).join(', ');
+          if (err.keyPattern.email) { // Specifically check if 'email' is the conflicting field
+            DMessage = `This email address is already registered. Please use a different email or log in.`;
+          } else if (err.keyPattern.id) { // Specifically check if 'id' is the conflicting field
+             DMessage = `An account already exists with this ID. This is unexpected, please contact support or check database configuration.`;
+             console.error("[Signup API] Critical: Duplicate key error on 'id' field. This suggests a custom unique index on 'id' in the MongoDB collection which should be removed. Mongoose uses '_id'.");
+          }
+           else {
+            DMessage = `An account already exists with this ${conflictingFields}. Please use different details.`;
+          }
+          console.log("[Signup API] Conflicting fields from keyPattern:", conflictingFields);
+      }
       return NextResponse.json(
-        { message: "This email address is already registered. Please use a different email or log in.", errorDetails: `MongoDB E11000: Duplicate email - ${email}` },
-        { status: 409 } // Conflict
+          { message: DMessage, errorDetails: `MongoDB E11000: Duplicate key on field(s): ${JSON.stringify(err.keyPattern)}` },
+          { status: 409 } // Conflict
       );
     }
     
-    // Check for other MongoDB duplicate key errors (e.g. if a custom unique index was accidentally added elsewhere)
-    if (err.code === 11000) {
-        let DMessage = "A user with some of these details already exists. Please check your input.";
-        // Log the actual keyPattern to understand what caused the conflict
-        console.log("[Signup API] MongoDB duplicate key error (non-email):", err.keyPattern);
-        if (err.keyPattern) {
-            const conflictingFields = Object.keys(err.keyPattern).join(', ');
-            DMessage = `An account already exists with this ${conflictingFields}. Please use different details.`;
-        }
-        return NextResponse.json(
-            { message: DMessage, errorDetails: `MongoDB E11000: Duplicate key on field(s): ${JSON.stringify(err.keyPattern)}` },
-            { status: 409 } // Conflict
-        );
-    }
-
     // General server error
     let errorDetails = "Unknown server error.";
     if (err.name && err.message) {
@@ -89,7 +98,6 @@ export const POST = async (request: NextRequest) => {
     } else if (err.code) {
         errorDetails = `Error Code ${err.code}`;
     }
-
 
     return NextResponse.json(
       { 
