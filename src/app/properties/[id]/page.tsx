@@ -5,11 +5,11 @@ import Image from 'next/image';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
-import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, Home as HomeIcon, ImageIcon, UserCircle, Calendar as CalendarIconLucide, DollarSign, Wifi, Loader2, CheckCircle, Moon, Package, Banknote, CalendarX } from 'lucide-react';
+import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, Home as HomeIcon, ImageIcon, UserCircle, Calendar as CalendarIconLucide, DollarSign, Wifi, Loader2, CheckCircle, Moon, Package, Banknote, CalendarX, Info } from 'lucide-react';
 import { PropertyAmenityIcon } from '@/components/property/PropertyAmenityIcon';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import type { Property as PropertyType } from '@/lib/types';
+import type { Property as PropertyType, BookingStatus } from '@/lib/types';
 import { PropertyBookingCalendar } from '@/components/property/PropertyBookingCalendar';
 import {
   Carousel,
@@ -22,7 +22,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import type { DateRange } from 'react-day-picker';
-import { format, isValid as isValidDate, differenceInCalendarDays, startOfDay, isBefore, parseISO } from 'date-fns';
+import { format, isValid as isValidDate, differenceInCalendarDays, startOfDay, isBefore, parseISO, isSameDay } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { loadStripe } from '@stripe/stripe-js';
 
@@ -37,7 +37,11 @@ interface BookingPriceDetails {
   totalPrice: number;
 }
 
-type ActiveBookingRange = { startDate: string; endDate: string };
+type ActiveBookingRange = { 
+  startDate: string; 
+  endDate: string;
+  bookingStatus: BookingStatus; // Added bookingStatus
+};
 
 
 const PropertyDetailsPage = () => {
@@ -95,7 +99,7 @@ const PropertyDetailsPage = () => {
   }, [propertyId]);
 
   useEffect(() => {
-    if (property && property.id) {
+    if (property && property.id && !isLoading) { // Ensure property is loaded before fetching bookings
       setIsLoadingActiveBookings(true);
       const fetchActiveBookingsForProperty = async () => {
         try {
@@ -105,7 +109,7 @@ const PropertyDetailsPage = () => {
             setActiveBookings([]); 
             return;
           }
-          const data = await response.json();
+          const data: ActiveBookingRange[] = await response.json();
           setActiveBookings(data);
         } catch (error) {
           console.error("Error fetching active bookings:", error);
@@ -116,7 +120,6 @@ const PropertyDetailsPage = () => {
       };
       fetchActiveBookingsForProperty();
     } else if (!property && !isLoading) {
-      // If property failed to load, don't try to fetch bookings
       setIsLoadingActiveBookings(false);
     }
   }, [property, isLoading]);
@@ -229,7 +232,7 @@ const PropertyDetailsPage = () => {
       const result = await response.json();
 
       if (!response.ok) {
-        if (response.status === 409) { // Conflict, dates likely taken
+        if (response.status === 409) { 
             toast({
                 title: "Dates No Longer Available",
                 description: result.message || "The selected dates have just been booked. Please choose different dates.",
@@ -271,6 +274,13 @@ const PropertyDetailsPage = () => {
     } finally {
       setIsBookingLoading(false);
     } 
+  };
+
+  const formatBookingStatusDisplay = (status?: BookingStatus): string => {
+    if (!status || typeof status !== 'string') {
+      return 'Unknown';
+    }
+    return status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
 
@@ -458,11 +468,17 @@ const PropertyDetailsPage = () => {
                   {activeBookings.map((booking, index) => (
                     <li key={index}>
                       {format(parseISO(booking.startDate), 'LLL dd, yyyy')} - {format(parseISO(booking.endDate), 'LLL dd, yyyy')}
+                      <span className="text-xs ml-2 px-1.5 py-0.5 rounded-full bg-muted-foreground/10 text-muted-foreground font-medium">
+                        {formatBookingStatusDisplay(booking.bookingStatus)}
+                      </span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-muted-foreground">This property has no active bookings at the moment.</p>
+                <div className="flex items-center text-sm text-muted-foreground">
+                    <Info size={16} className="mr-2 text-primary" />
+                    This property has no active or pending bookings at the moment.
+                </div>
               )}
             </div>
 
@@ -558,5 +574,3 @@ const PropertyDetailsPage = () => {
 };
 
 export default PropertyDetailsPage;
-
-    

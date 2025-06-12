@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import connectDB from '@/utils/db';
 import Booking from '@/models/Booking';
 import { startOfDay } from 'date-fns';
+import type { BookingStatus } from '@/lib/types';
 
 export async function GET(
   request: NextRequest,
@@ -23,11 +24,12 @@ export async function GET(
     const bookings = await Booking.find({
       listingId: new mongoose.Types.ObjectId(propertyId),
       bookingStatus: { $in: ['pending_payment', 'pending_confirmation', 'confirmed_by_host'] },
-    }).select('startDate endDate').lean();
+    }).select('startDate endDate bookingStatus').lean(); // Added bookingStatus
 
     const activeDateRanges = bookings.map(b => ({
       startDate: startOfDay(new Date(b.startDate)).toISOString(),
       endDate: startOfDay(new Date(b.endDate)).toISOString(),
+      bookingStatus: b.bookingStatus as BookingStatus, // Include bookingStatus
     }));
 
     return NextResponse.json(activeDateRanges, { status: 200 });
