@@ -4,7 +4,7 @@ import Stripe from 'stripe';
 import connectDB from '@/utils/db';
 import Booking, { type BookingDocument } from '@/models/Booking';
 import Payment from '@/models/Payment';
-import PropertyModel, { type PropertyDocument } from '@/models/Property';
+import BookedDateRangeModel from '@/models/BookedDateRange'; // Import new model
 import mongoose from 'mongoose';
 
 const STRIPE_SECRET_KEY = "sk_test_51RZ79aD5LRi4lJMY7yYuDQ8aRlBJPpAqdHdYhHOZvcSWSgJWvSzQVM3sACZJzcdWo1VHKdnZKVxxkzZJWgVYb5fz00TC8f8KKK";
@@ -91,38 +91,20 @@ export async function POST(request: NextRequest) {
         await booking.save();
         console.log(`[Webhook] Booking ${bookingId} updated to paid and confirmed.`);
 
-        // Update Property's bookedDateRanges
-        const property = await PropertyModel.findOneAndUpdate(
-          { _id: booking.listingId, "bookedDateRanges.bookingId": booking._id },
-          { $set: { "bookedDateRanges.$.status": "confirmed_by_host" } },
+        // Update BookedDateRange document
+        const updatedBookedDateRange = await BookedDateRangeModel.findOneAndUpdate(
+          { bookingId: booking._id },
+          { $set: { status: "confirmed_by_host" } },
           { new: true }
-        ) as PropertyDocument | null;
+        );
 
-        if (property) {
-            console.log(`[Webhook] Updated property ${property._id} bookedDateRanges for booking ${booking._id} to confirmed_by_host.`);
+        if (updatedBookedDateRange) {
+            console.log(`[Webhook] Updated BookedDateRange document for booking ${booking._id} to confirmed_by_host.`);
         } else {
-            // If the specific subdocument wasn't found (e.g., if it was missed in initiate-payment) try to add it.
-            // This scenario should be rare.
-            const fallbackProperty = await PropertyModel.findById(booking.listingId) as PropertyDocument | null;
-            if (fallbackProperty) {
-                const existingRange = fallbackProperty.bookedDateRanges.find(r => r.bookingId.toString() === booking._id.toString());
-                if (!existingRange) {
-                    fallbackProperty.bookedDateRanges.push({
-                        bookingId: booking._id.toString(), // Schema expects ObjectId, Mongoose handles casting
-                        startDate: booking.startDate,
-                        endDate: booking.endDate,
-                        status: 'confirmed_by_host',
-                    });
-                    await fallbackProperty.save();
-                    console.warn(`[Webhook] Added missing booking ${booking._id} to property ${fallbackProperty._id} bookedDateRanges as confirmed_by_host during completion.`);
-                } else {
-                     console.warn(`[Webhook] Booking ${booking._id} found in property ${fallbackProperty._id} but initial update query failed. Status might be already correct or another issue.`);
-                }
-            } else {
-                console.warn(`[Webhook] Property ${booking.listingId} not found when trying to update bookedDateRanges for booking ${booking._id}.`);
-            }
+            console.warn(`[Webhook] BookedDateRange document for booking ${booking._id} not found during completion. This might indicate an issue if it was expected to exist.`);
+            // Optionally, create it if it's missing, though it should have been created in initiate-payment
+            // For now, we'll just log a warning.
         }
-
 
         const newPayment = new Payment({
           bookingId: booking._id,
@@ -154,17 +136,12 @@ export async function POST(request: NextRequest) {
                 await bookingToUpdate.save();
                 console.log(`[Webhook] Booking ${failedBookingId} paymentStatus updated to 'failed'.`);
 
-                // Remove from Property's bookedDateRanges for failed payment
-                const property = await PropertyModel.findByIdAndUpdate(
-                    bookingToUpdate.listingId,
-                    { $pull: { bookedDateRanges: { bookingId: bookingToUpdate._id } } },
-                    { new: true }
-                ) as PropertyDocument | null;
-
-                if (property) {
-                    console.log(`[Webhook] Removed booking ${bookingToUpdate._id} from property ${property._id} bookedDateRanges due to payment failure.`);
+                // Remove the BookedDateRange document for failed payment
+                const deletedRange = await BookedDateRangeModel.findOneAndDelete({ bookingId: bookingToUpdate._id });
+                if (deletedRange) {
+                    console.log(`[Webhook] Removed BookedDateRange document for booking ${bookingToUpdate._id} due to payment failure.`);
                 } else {
-                    console.warn(`[Webhook] Property ${bookingToUpdate.listingId} not found when trying to remove booking ${bookingToUpdate._id} from bookedDateRanges after payment failure.`);
+                    console.warn(`[Webhook] BookedDateRange document for booking ${bookingToUpdate._id} not found when trying to remove after payment failure.`);
                 }
             }
         } catch (dbError: any) {

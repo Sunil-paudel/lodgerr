@@ -6,7 +6,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
 import type { DateRange, DayModifiers } from "react-day-picker";
 import { startOfDay, differenceInCalendarDays, isBefore, isAfter, isValid, parseISO, isSameDay, format } from 'date-fns';
-import type { Property, BookedDateRange, BookingStatus } from '@/lib/types'; // Updated import
+import type { Property, BookedDateRange as ActiveBookingRange } from '@/lib/types'; // Use ActiveBookingRange
 
 interface PropertyBookingCalendarProps {
   selectedRange: DateRange | undefined;
@@ -15,7 +15,7 @@ interface PropertyBookingCalendarProps {
   pricePeriod: Property['pricePeriod'];
   availableFrom?: Date | string;
   availableTo?: Date | string;
-  activeBookings?: BookedDateRange[] | null; // Changed type to BookedDateRange
+  activeBookings?: ActiveBookingRange[] | null; // Changed type to ActiveBookingRange[]
 }
 
 export function PropertyBookingCalendar({
@@ -25,7 +25,7 @@ export function PropertyBookingCalendar({
   pricePeriod,
   availableFrom,
   availableTo,
-  activeBookings // This prop now expects BookedDateRange[]
+  activeBookings
 }: PropertyBookingCalendarProps) {
 
   const processDateProp = (dateProp?: Date | string): Date | null => {
@@ -77,14 +77,14 @@ export function PropertyBookingCalendar({
     }
   }, [selectedRange, price, pricePeriod]);
 
-  const isDayBookedOrPending = (day: Date, ranges: BookedDateRange[] | null | undefined): boolean => {
+  const isDayBookedOrPending = (day: Date, ranges: ActiveBookingRange[] | null | undefined): boolean => {
     if (!ranges) return false;
     const dayAtMidnight = startOfDay(day);
     return ranges.some(range => {
       if (!['pending_payment', 'pending_confirmation', 'confirmed_by_host'].includes(range.status)) {
         return false;
       }
-      // Dates from `property.bookedDateRanges` are already Date objects or ISO strings
+      // Dates from activeBookings are now expected to be ISO strings from API
       const startDate = startOfDay(parseISO(range.startDate as unknown as string));
       const endDate = startOfDay(parseISO(range.endDate as unknown as string));
       return isValid(startDate) && isValid(endDate) && dayAtMidnight >= startDate && dayAtMidnight < endDate;
@@ -102,12 +102,10 @@ export function PropertyBookingCalendar({
 
     if (activeBookings && activeBookings.length > 0) {
       for (const booking of activeBookings) {
-        // Ensure booking.startDate and booking.endDate are valid Date objects or parseable strings
         const bookingStart = startOfDay(parseISO(booking.startDate as unknown as string));
         const bookingEnd = startOfDay(parseISO(booking.endDate as unknown as string)); 
         
         if (isValid(bookingStart) && isValid(bookingEnd)) {
-          // Disable if date is within a booked/pending range that makes it unavailable
           if (['pending_payment', 'pending_confirmation', 'confirmed_by_host'].includes(booking.status)) {
             if (dateAtMidnight >= bookingStart && dateAtMidnight < bookingEnd) {
               return true;
@@ -135,8 +133,9 @@ export function PropertyBookingCalendar({
         footerText = `Selected check-in: ${format(selectedRange.from, 'LLL dd, yyyy')}. Now select check-out.`;
     }
   }
+  
+  const calendarKey = activeBookings === null ? 'loading-bookings' : `bookings-${activeBookings ? activeBookings.map(b=>b.id).join('-') : 'no-bookings'}`;
 
-  const calendarKey = activeBookings === null ? 'loading-bookings' : `bookings-${JSON.stringify(activeBookings)}`;
 
   const dayClassName = (day: Date, modifiers: DayModifiers) => {
     if (isDayBookedOrPending(day, activeBookings)) {
@@ -165,7 +164,7 @@ export function PropertyBookingCalendar({
         fromDate={ normAvailableFrom && isAfter(normAvailableFrom, today) ? normAvailableFrom : today }
         toDate={normAvailableTo || undefined}
         footer={
-          activeBookings === null && !normAvailableFrom && !normAvailableTo ? ( // Show loading only if calendar truly has no range info yet
+          activeBookings === null && !normAvailableFrom && !normAvailableTo ? ( 
             <div className="pt-2 space-y-1 text-sm text-muted-foreground">
                 Loading availability...
             </div>
