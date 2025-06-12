@@ -6,6 +6,7 @@ export type PricePeriod = 'nightly' | 'weekly' | 'monthly';
 // New type for booking status
 export type BookingStatus = 
   | 'pending_confirmation' 
+  | 'pending_payment' // New status for before payment
   | 'confirmed_by_host' 
   | 'rejected_by_host' 
   | 'cancelled_by_guest' 
@@ -56,14 +57,14 @@ export interface Booking {
   endDate: Date;
   totalPrice: number;
   paymentStatus: PaymentStatus;
-  bookingStatus: BookingStatus; // Added booking status
+  bookingStatus: BookingStatus; 
   createdAt: Date;
-  guestDetails?: { // Populated from User model
+  guestDetails?: { 
     name?: string | null;
     email?: string | null;
     avatarUrl?: string | null; 
   };
-  propertyDetails?: { // Optional: for views where bookings are listed directly
+  propertyDetails?: { 
     title?: string;
     mainImage?: string;
     id?: string;
@@ -81,10 +82,11 @@ export interface Review {
 
 export interface Payment {
   id: string;
-  bookingId: string;
-  stripePaymentId: string;
-  amount: number;
-  status: PaymentStatus | 'succeeded';
+  bookingId: string; // Reference to your Booking model's ID
+  stripePaymentIntentId: string; // Stripe Payment Intent ID
+  stripeChargeId?: string; // Stripe Charge ID (can be part of Payment Intent)
+  amount: number; // Amount in cents
+  currency: string; // e.g., 'usd'
+  status: PaymentStatus | 'succeeded'; // Stripe uses 'succeeded' for successful payments
   createdAt: Date;
 }
-

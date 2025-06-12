@@ -38,10 +38,11 @@ const bookingSchema = new Schema<BookingDocument>(
       required: true,
       default: 'pending',
     },
-    bookingStatus: { // Added bookingStatus field
+    bookingStatus: {
       type: String,
       enum: [
         'pending_confirmation', 
+        'pending_payment', // Added new status
         'confirmed_by_host', 
         'rejected_by_host', 
         'cancelled_by_guest',
@@ -49,7 +50,7 @@ const bookingSchema = new Schema<BookingDocument>(
         'no_show'
       ] as BookingStatus[],
       required: true,
-      default: 'pending_confirmation',
+      default: 'pending_confirmation', // Default might change based on flow
     },
   },
   { timestamps: true }
@@ -57,11 +58,6 @@ const bookingSchema = new Schema<BookingDocument>(
 
 bookingSchema.index({ listingId: 1, startDate: 1, endDate: 1 });
 bookingSchema.index({ guestId: 1 });
-bookingSchema.index({ hostId: 1, bookingStatus: 1 }); // Index for host to query their bookings by status
-
-// Populate hostId on the booking for easier querying by host
-// This assumes you might add a hostId field to the booking schema itself,
-// or you'll do a multi-step lookup: Booking -> Property -> hostId
-// For now, we'll rely on looking up bookings by propertyId and then checking property.hostId
+// bookingSchema.index({ hostId: 1, bookingStatus: 1 }); // If hostId is directly on booking
 
 export default mongoose.models.Booking || mongoose.model<BookingDocument>("Booking", bookingSchema);

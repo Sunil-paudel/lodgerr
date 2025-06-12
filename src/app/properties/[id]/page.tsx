@@ -24,6 +24,10 @@ import { useToast } from '@/hooks/use-toast';
 import type { DateRange } from 'react-day-picker';
 import { format, isValid as isValidDate } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
+import { loadStripe } from '@stripe/stripe-js'; // Import Stripe.js
+
+// Ensure your Stripe publishable key is in .env.local
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
 
 
 const PropertyDetailsPage = () => {
@@ -83,8 +87,10 @@ const PropertyDetailsPage = () => {
           text = `Available from ${format(fromDate, 'LLL dd, yyyy')}`;
       } else if (toDate) {
           text = `Available until ${format(toDate, 'LLL dd, yyyy')}`;
+      } else {
+          text = "This property is generally available. Check calendar for specific dates."
       }
-      setAvailabilityText(text || null); // Set to null if empty to distinguish from initial loading state
+      setAvailabilityText(text); 
     } else {
       setAvailabilityText(null);
     }
@@ -108,7 +114,7 @@ const PropertyDetailsPage = () => {
 
     setIsBookingLoading(true);
     try {
-      const response = await fetch('/api/bookings', {
+      const response = await fetch('/api/bookings/initiate-payment', { // Updated API endpoint
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -120,13 +126,25 @@ const PropertyDetailsPage = () => {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || "Failed to create booking.");
+        throw new Error(result.message || "Failed to initiate booking payment.");
       }
-      toast({
-        title: "Booking Request Sent!",
-        description: result.message || "Your booking request has been sent and is pending confirmation.",
+      
+      // Redirect to Stripe Checkout
+      const stripe = await stripePromise;
+      if (!stripe) {
+        throw new Error("Stripe.js has not loaded yet.");
+      }
+      const { error: stripeError } = await stripe.redirectToCheckout({
+        sessionId: result.sessionId,
       });
-      setSelectedDateRange(undefined); 
+
+      if (stripeError) {
+        console.error("Stripe redirect error:", stripeError);
+        throw new Error(stripeError.message || "Failed to redirect to Stripe.");
+      }
+      // If redirectToCheckout is successful, the user is redirected and this part of the code might not be reached
+      // unless there's an immediate error before redirection.
+
     } catch (error: any) {
       toast({
         title: "Booking Failed",
@@ -134,7 +152,14 @@ const PropertyDetailsPage = () => {
         variant: "destructive",
       });
     } finally {
-      setIsBookingLoading(false);
+      // setIsBookingLoading(false); // This might not be reached if redirect is successful
+      // If redirect fails, we want to set loading to false.
+      // It's tricky because successful redirect means user leaves the page.
+      // Consider if there's a scenario where we need to set this false if redirect doesn't happen.
+      // For now, if an error occurs before stripe.redirectToCheckout, it will be caught and set to false.
+       if (!isBookingLoading) { // only set if not already false due to error/completion
+           setIsBookingLoading(false);
+       }
     }
   };
 
@@ -284,7 +309,7 @@ const PropertyDetailsPage = () => {
                 </div>
             </div>
 
-            {availabilityText === null && !isLoading ? ( // Show skeleton only if not loading and text is not yet computed
+           {availabilityText === null && isLoading ? (
                 <div className="py-6 border-b border-border">
                     <h3 className="text-xl font-semibold mb-2 font-headline flex items-center">
                         <CalendarIconLucide size={20} className="mr-2 text-primary" />
@@ -300,9 +325,16 @@ const PropertyDetailsPage = () => {
                   Host-Defined Availability
                 </h3>
                 <p className="text-foreground/90">{availabilityText}</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Note: Specific dates within this period might already be booked. Please check the calendar below.
-                </p>
+                 { !(property.availableFrom || property.availableTo) && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                        Specific dates can be selected using the calendar below.
+                    </p>
+                 )}
+                 { (property.availableFrom || property.availableTo) && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                        Note: Specific dates within this period might already be booked. Please check the calendar below.
+                    </p>
+                 )}
               </div>
             ) : null}
 
@@ -359,9 +391,9 @@ const PropertyDetailsPage = () => {
                 disabled={isBookingLoading || !selectedDateRange?.from || !selectedDateRange?.to}
               >
                 {isBookingLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {isBookingLoading ? "Reserving..." : "Reserve"}
+                {isBookingLoading ? "Processing..." : "Reserve & Pay"}
               </Button>
-              <p className="text-xs text-muted-foreground text-center mt-2">You won&apos;t be charged yet (Demo)</p>
+              <p className="text-xs text-muted-foreground text-center mt-2">You will be redirected to our payment partner.</p>
             </div>
           </div>
         </div>
