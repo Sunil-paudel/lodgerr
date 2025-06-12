@@ -1,5 +1,8 @@
 
-// This file path uses '[propertyId]' which conflicts with '[id]' at the same route level.
-// This content is intentionally left empty to mark this path as obsolete.
-// Please ensure the directory structure src/app/api/properties/[propertyId]/ no longer exists
-// if this error persists after restarting the server. The correct path is src/app/api/properties/[id]/booked-ranges/route.ts
+// This file path uses a conflicting dynamic segment name '[propertyId]'.
+// It has been marked as obsolete and should be deleted. 
+// The correct path for this functionality is /api/properties/[id]/booked-ranges/route.ts.
+// Please ensure the directory structure src/app/api/properties/[propertyId]/ (and this file within it) no longer exists
+// if this error persists after restarting the server.
+
+    

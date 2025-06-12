@@ -52,9 +52,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ message: 'Property not found.' }, { status: 404 });
     }
     
-    // Note: bookedDateRanges are no longer part of propertyDoc here.
-    // They will be fetched separately by the client if needed.
-    console.log(`[API /properties/${id} GET] Fetched propertyDoc (bookedDateRanges are now fetched separately)`);
+    console.log(`[API /properties/${id} GET] Fetched propertyDoc (bookedDateRanges are fetched separately)`);
 
     const propertyResponse: PropertyType = {
         id: propertyDoc._id.toString(),
@@ -80,7 +78,6 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         createdAt: propertyDoc.createdAt,
         availableFrom: propertyDoc.availableFrom,
         availableTo: propertyDoc.availableTo,
-        // bookedDateRanges is removed from the direct property response
     };
 
     return NextResponse.json(propertyResponse, { status: 200 });
@@ -203,33 +200,26 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       return NextResponse.json({ message: 'Forbidden: You are not authorized to delete this property.' }, { status: 403 });
     }
 
-    // Check for active or upcoming bookings using BookedDateRangeModel
     const nonDeletableStatuses: string[] = ['pending_confirmation', 'pending_payment', 'confirmed_by_host'];
     const activeOrPendingBookedRanges = await BookedDateRangeModel.find({
       propertyId: propertyToDelete._id,
       status: { $in: nonDeletableStatuses },
-      endDate: { $gte: startOfDay(new Date()) } // Check if booking end date is today or in future
+      endDate: { $gte: startOfDay(new Date()) } 
     }).lean();
 
     if (activeOrPendingBookedRanges.length > 0) {
       console.log(`[API /properties/${id} DELETE] Deletion blocked. Found ${activeOrPendingBookedRanges.length} active/pending BookedDateRange documents.`);
       return NextResponse.json({ 
         message: 'This property cannot be deleted because it has active or upcoming bookings. Please resolve these bookings first.' 
-      }, { status: 409 }); // 409 Conflict
+      }, { status: 409 }); 
     }
     
-    // Proceed with deletion
     await PropertyModel.findByIdAndDelete(id);
     console.log(`[API /properties/${id} DELETE] Property document deleted.`);
 
-    // Delete associated BookedDateRange documents
-    const deletionResult = await BookedDateRangeModel.deleteMany({ propertyId: id });
+    const deletionResult = await BookedDateRangeModel.deleteMany({ propertyId: new mongoose.Types.ObjectId(id) });
     console.log(`[API /properties/${id} DELETE] Deleted ${deletionResult.deletedCount} associated BookedDateRange documents.`);
     
-    // Note: Associated bookings in the 'Bookings' collection are not deleted here by default. 
-    // They will become "orphaned" if not explicitly handled.
-    // You might want to mark them as 'listing_removed_by_host', notify users, etc.
-
     return NextResponse.json({ message: 'Property and associated booked date ranges deleted successfully.' }, { status: 200 });
 
   } catch (error: any) {
@@ -243,3 +233,5 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     return NextResponse.json({ message: errorMessage, errorDetails: error.toString() }, { status: 500 });
   }
 }
+
+    

@@ -9,9 +9,9 @@ import type { BookedDateRange as BookedDateRangeType, BookingStatus } from '@/li
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } } // Ensure 'id' is used here
+  { params }: { params: { id: string } } 
 ) {
-  const { id } = params; // Use 'id' from params
+  const { id } = params; 
 
   if (!id || !mongoose.Types.ObjectId.isValid(id)) {
     return NextResponse.json({ message: 'Invalid property ID format.' }, { status: 400 });
@@ -24,20 +24,19 @@ export async function GET(
     const relevantStatuses: BookingStatus[] = ['pending_payment', 'pending_confirmation', 'confirmed_by_host'];
 
     const bookedRangesDocs = await BookedDateRangeModel.find({
-      propertyId: new mongoose.Types.ObjectId(id), // Use 'id' for querying
+      propertyId: new mongoose.Types.ObjectId(id), 
       status: { $in: relevantStatuses }
     }).lean();
 
-    console.log(`[API /properties/${id}/booked-ranges GET] Found ${bookedRangesDocs.length} relevant booked range documents.`);
+    console.log(`[API /properties/${id}/booked-ranges GET] Found ${bookedRangesDocs.length} relevant booked range documents for property ${id}.`);
 
     const bookedRanges: BookedDateRangeType[] = bookedRangesDocs.map(doc => {
-      // Cast to BookedDateRangeDocument to access Mongoose document properties like _id
-      const range = doc as unknown as BookedDateRangeDocument; 
+      const range = doc as unknown as BookedDateRangeDocument; // Cast to include Mongoose specific fields like _id
       return {
         id: range._id.toString(),
         propertyId: range.propertyId.toString(),
         bookingId: range.bookingId.toString(),
-        startDate: range.startDate, 
+        startDate: range.startDate,
         endDate: range.endDate,
         status: range.status,
         createdAt: range.createdAt,
@@ -45,18 +44,21 @@ export async function GET(
       };
     });
     
-    console.log(`[API /properties/${id}/booked-ranges GET] Transformed booked ranges:`, JSON.stringify(bookedRanges, null, 2).substring(0, 500) + (JSON.stringify(bookedRanges, null, 2).length > 500 ? '...' : ''));
+    const loggedRanges = JSON.stringify(bookedRanges, null, 2);
+    console.log(`[API /properties/${id}/booked-ranges GET] Transformed booked ranges (first 500 chars): ${loggedRanges.substring(0, 500)}${loggedRanges.length > 500 ? '...' : ''}`);
 
     return NextResponse.json(bookedRanges, { status: 200 });
 
   } catch (error: any) {
-    console.error(`[API /properties/${id}/booked-ranges GET] Critical error fetching booked ranges:`, error.message, error.stack);
+    console.error(`[API /properties/${id}/booked-ranges GET] Critical error fetching booked ranges for property ${id}:`, error.message, error.stack);
     let errorMessage = 'Server error while fetching booked ranges.';
     if (error.name === 'MongoNetworkError') {
       errorMessage = 'Database connection error during booked ranges fetch.';
     } else if (error.message) {
       errorMessage = error.message;
     }
-    return NextResponse.json({ message: errorMessage, errorDetails: error.toString() }, { status: 500 });
+    return NextResponse.json({ message: errorMessage, errorDetails: error.toString(), errorName: error.name }, { status: 500 });
   }
 }
+
+    
