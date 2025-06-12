@@ -38,7 +38,7 @@ const propertyEditSchema = z.object({
   price: z.coerce.number().positive().min(1).max(100000).optional(),
   pricePeriod: z.enum(["nightly", "weekly", "monthly"] as [PricePeriod, ...PricePeriod[]]).optional(),
   bedrooms: z.coerce.number().min(0).max(20).optional(),
-  bathrooms: z.coerce.number().min(0).max(10).optional(),
+  bathrooms: z.coerce.number().min(0).max(10).optional(), // Corrected: bathrooms can be 0 for certain property types, but often min 1. Keeping min 0 for flexibility.
   maxGuests: z.coerce.number().min(1).max(50).optional(),
   images: z.array(
     z.object({
@@ -46,8 +46,8 @@ const propertyEditSchema = z.object({
     })
   ).min(1, "At least one image is required.").max(MAX_IMAGES, `Maximum ${MAX_IMAGES} images.`).optional(),
   amenities: z.array(z.string()).optional(),
-  availableFrom: z.date().optional(),
-  availableTo: z.date().optional(),
+  availableFrom: z.date().optional().nullable(), // Allow null
+  availableTo: z.date().optional().nullable(),   // Allow null
 }).refine(data => {
   if (data.availableFrom && data.availableTo) {
     return data.availableTo >= data.availableFrom;
@@ -90,8 +90,8 @@ export default function EditPropertyPage() {
     defaultValues: {
       images: [],
       pricePeriod: "nightly",
-      availableFrom: undefined,
-      availableTo: undefined,
+      availableFrom: undefined, // Will be populated from fetched data
+      availableTo: undefined,   // Will be populated from fetched data
     }
   });
 
@@ -108,7 +108,7 @@ export default function EditPropertyPage() {
   }, [authStatus, router, propertyId]);
 
   useEffect(() => {
-    if (propertyId && authStatus === "authenticated") {
+    if (propertyId && authStatus === "authenticated" && session?.user?.id) {
       const fetchProperty = async () => {
         setIsLoading(true);
         setPageError(null);
@@ -120,7 +120,7 @@ export default function EditPropertyPage() {
           }
           const data: PropertyType = await response.json();
 
-          if (data.hostId !== session?.user?.id) {
+          if (data.hostId !== session.user.id) {
             setPageError("You are not authorized to edit this property.");
             setPropertyData(null);
             setIsLoading(false);
@@ -139,6 +139,7 @@ export default function EditPropertyPage() {
             bedrooms: data.bedrooms,
             bathrooms: data.bathrooms,
             maxGuests: data.maxGuests,
+            // react-hook-form expects undefined for empty optional dates, or Date objects
             availableFrom: data.availableFrom ? new Date(data.availableFrom) : undefined,
             availableTo: data.availableTo ? new Date(data.availableTo) : undefined,
             images: (data.images || []).map(url => ({ url })),
@@ -163,9 +164,7 @@ export default function EditPropertyPage() {
             isExisting: true,
           }));
           setImageUploadStates(existingImages);
-          // `replaceImageFormFields` is already called by `reset` if images are part of defaultValues with correct structure.
-          // If `reset` doesn't handle `useFieldArray` for images, uncomment this:
-          // replaceImageFormFields(existingImages.map(img => ({ url: img.cloudinaryUrl! })));
+          replaceImageFormFields((data.images || []).map(url => ({ url })));
 
         } catch (err: any) {
           console.error("Error fetching property for edit:", err);
@@ -179,9 +178,10 @@ export default function EditPropertyPage() {
   }, [propertyId, authStatus, session, reset, replaceImageFormFields]);
   
   useEffect(() => {
-    setValue('availableFrom', availabilityDateRange?.from);
-    setValue('availableTo', availabilityDateRange?.to);
-    if (availabilityDateRange?.from || availabilityDateRange?.to) { // Trigger validation if either is set
+    setValue('availableFrom', availabilityDateRange?.from || null);
+    setValue('availableTo', availabilityDateRange?.to || null);
+    // Trigger validation if either is set, or if one is set and the other is not (which could be an error state)
+    if (availabilityDateRange?.from || availabilityDateRange?.to || (availabilityDateRange?.from && !availabilityDateRange?.to) || (!availabilityDateRange?.from && availabilityDateRange?.to) ) {
         trigger(['availableFrom', 'availableTo']);
     }
   }, [availabilityDateRange, setValue, trigger]);
@@ -191,14 +191,14 @@ export default function EditPropertyPage() {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    const currentImageCount = imageUploadStates.length;
+    const currentImageCount = imageUploadStates.filter(s => !s.error).length;
     if (currentImageCount + files.length > MAX_IMAGES) {
       toast({
         title: "Too many images",
         description: `You can upload a maximum of ${MAX_IMAGES} images. You have ${currentImageCount} selected/uploaded.`,
         variant: "destructive",
       });
-      setFileInputKey(Date.now());
+      setFileInputKey(Date.now()); // Reset file input to allow re-selection if needed
       return;
     }
 
@@ -211,11 +211,11 @@ export default function EditPropertyPage() {
       isExisting: false,
     }));
     setImageUploadStates(prev => [...prev, ...newUploadStates]);
-    setFileInputKey(Date.now());
+    setFileInputKey(Date.now()); // Reset file input
 
     for (let i = 0; i < newUploadStates.length; i++) {
       const uploadState = newUploadStates[i];
-      const file = uploadState.file!;
+      const file = uploadState.file!; // file is asserted as non-null here because it's a new upload
 
       if (file.size > MAX_FILE_SIZE_BYTES) {
         setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, error: `File too large (max ${MAX_FILE_SIZE_MB}MB).` } : s));
@@ -259,72 +259,72 @@ export default function EditPropertyPage() {
   const onSubmit: SubmitHandler<PropertyEditFormData> = async (data) => {
     setFormIsSubmitting(true);
 
-    const finalImageUrls = imageUploadStates
+    const finalImageUrlsFromState = imageUploadStates
       .filter(state => state.cloudinaryUrl && !state.error)
       .map(state => ({ url: state.cloudinaryUrl! }));
 
-    if (finalImageUrls.length === 0) {
+    if (finalImageUrlsFromState.length === 0) {
         toast({ title: "Validation Error", description: "At least one image must be present.", variant: "destructive"});
         setFormIsSubmitting(false);
         return;
     }
-
+    
+    // Use react-hook-form's 'data' which includes values from setValue for dates
     const changedData: Partial<PropertyEditFormData> = {};
     let hasChanges = false;
 
     (Object.keys(data) as Array<keyof PropertyEditFormData>).forEach(key => {
-        if (key === 'images' || key === 'amenities' || key === 'availableFrom' || key === 'availableTo') return; // Handle separately
+        if (key === 'images' || key === 'amenities' || key === 'availableFrom' || key === 'availableTo') return; 
 
         const formValue = data[key];
         const originalValue = propertyData?.[key as keyof PropertyType];
         
-        // Ensure we handle undefined vs null vs empty string consistently if needed for your backend
-        // For simple comparison:
-        if (formValue !== originalValue && !(formValue === undefined && originalValue == null)) { // Check if actually changed
+        if (formValue !== originalValue && !(formValue === undefined && (originalValue == null || originalValue === ''))) {
             (changedData as any)[key] = formValue;
             hasChanges = true;
         }
     });
     
-    // Handle images
-    const originalImageUrls = (propertyData?.images || []).join(',');
-    const newImageUrls = finalImageUrls.map(img => img.url).join(',');
-    if (originalImageUrls !== newImageUrls) {
-      changedData.images = finalImageUrls;
+    const originalImageUrlsString = (propertyData?.images || []).slice().sort().join(',');
+    const newImageUrlsArray = finalImageUrlsFromState.map(img => img.url).slice().sort();
+    const newImageUrlsString = newImageUrlsArray.join(',');
+
+    if (originalImageUrlsString !== newImageUrlsString) {
+      changedData.images = finalImageUrlsFromState;
       hasChanges = true;
     }
 
-    // Handle amenities
-    const originalAmenities = (propertyData?.amenities || []).slice().sort().join(',');
-    const newAmenities = selectedAmenities.slice().sort().join(',');
-    if (originalAmenities !== newAmenities) {
+    const originalAmenitiesString = (propertyData?.amenities || []).slice().sort().join(',');
+    const newAmenitiesString = selectedAmenities.slice().sort().join(',');
+    if (originalAmenitiesString !== newAmenitiesString) {
       changedData.amenities = selectedAmenities;
       hasChanges = true;
     }
 
-    // Handle availability dates
+    // Handle availability dates using form's `data` which reflects `setValue` calls
     const originalAvailableFromTime = propertyData?.availableFrom ? startOfDay(new Date(propertyData.availableFrom)).getTime() : null;
-    const newAvailableFromTime = data.availableFrom ? startOfDay(new Date(data.availableFrom)).getTime() : null;
-    if (newAvailableFromTime !== originalAvailableFromTime) {
-        changedData.availableFrom = data.availableFrom ? startOfDay(new Date(data.availableFrom)) : undefined; // Send undefined to potentially unset
+    const formAvailableFromDate = data.availableFrom ? startOfDay(new Date(data.availableFrom)) : null; 
+
+    if (formAvailableFromDate?.getTime() !== originalAvailableFromTime) {
+        changedData.availableFrom = formAvailableFromDate; // Send the Date object or null
         hasChanges = true;
     }
 
     const originalAvailableToTime = propertyData?.availableTo ? startOfDay(new Date(propertyData.availableTo)).getTime() : null;
-    const newAvailableToTime = data.availableTo ? startOfDay(new Date(data.availableTo)).getTime() : null;
-    if (newAvailableToTime !== originalAvailableToTime) {
-        changedData.availableTo = data.availableTo ? startOfDay(new Date(data.availableTo)) : undefined; // Send undefined to potentially unset
+    const formAvailableToDate = data.availableTo ? startOfDay(new Date(data.availableTo)) : null;
+
+    if (formAvailableToDate?.getTime() !== originalAvailableToTime) {
+        changedData.availableTo = formAvailableToDate; // Send the Date object or null
         hasChanges = true;
     }
 
-
-    if (!hasChanges) {
+    if (!hasChanges && Object.keys(changedData).length === 0) { // Double check if any field was marked as changed
         toast({ title: "No Changes", description: "No changes were made to the property.", variant: "default" });
         setFormIsSubmitting(false);
-        router.push(`/properties/${propertyId}`);
+        // Optionally, redirect if no changes, or allow user to stay.
+        // router.push(`/properties/${propertyId}`); 
         return;
     }
-
 
     try {
       const response = await fetch(`/api/properties/${propertyId}`, {
@@ -335,7 +335,8 @@ export default function EditPropertyPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || "Failed to update property.");
+        console.error("Update failed result:", result);
+        throw new Error(result.message || "Failed to update property. Check console for details.");
       }
 
       toast({
@@ -343,8 +344,9 @@ export default function EditPropertyPage() {
         description: "Your property has been successfully updated.",
       });
       router.push(`/properties/${propertyId}`);
-      router.refresh();
+      router.refresh(); // Important to reflect changes if user navigates back or stays on a page that might show old data
     } catch (error: any) {
+      console.error("Update property error:", error);
       toast({
         title: "Update Failed",
         description: error.message || "An unexpected error occurred.",
@@ -390,11 +392,16 @@ export default function EditPropertyPage() {
     );
   }
 
-  if (!propertyData) {
+  if (!propertyData) { // Should be caught by pageError if fetch failed, but as a safeguard
     return (
       <div className="flex flex-col min-h-screen">
         <Header />
-        <main className="flex-grow flex items-center justify-center">Property not found or not authorized.</main>
+        <main className="flex-grow flex items-center justify-center">
+            <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
+            <h1 className="text-2xl font-semibold text-destructive mb-2">Property Not Found</h1>
+            <p className="text-muted-foreground mb-6">The property details could not be loaded.</p>
+            <Button onClick={() => router.push('/')} variant="outline">Go to Homepage</Button>
+        </main>
         <Footer />
       </div>
     );
@@ -511,7 +518,7 @@ export default function EditPropertyPage() {
                         <Button
                             id="availability-dates-edit"
                             variant="outline"
-                            className={`w-full justify-start text-left font-normal ${!availabilityDateRange && "text-muted-foreground"}`}
+                            className={`w-full justify-start text-left font-normal ${!(availabilityDateRange?.from) && "text-muted-foreground"}`}
                             disabled={formIsSubmitting}
                         >
                             <CalendarIconLucide className="mr-2 h-4 w-4" />
@@ -561,6 +568,7 @@ export default function EditPropertyPage() {
                         </div>
                     ))}
                     </div>
+                     {errors.amenities && <p className="text-sm text-destructive">{errors.amenities.message}</p>}
                 </div>
 
                 <div className="space-y-4">
@@ -578,13 +586,13 @@ export default function EditPropertyPage() {
                             disabled={formIsSubmitting || imageUploadStates.filter(s => s.cloudinaryUrl && !s.error).length >= MAX_IMAGES}
                             className="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
                         />
-                        {errors.images && !imageUploadStates.some(s => s.cloudinaryUrl) && <p className="text-sm text-destructive">{errors.images.message}</p>}
+                        {errors.images && imageUploadStates.filter(s => s.cloudinaryUrl && !s.error).length === 0 && <p className="text-sm text-destructive">{errors.images.message}</p>}
                     </div>
 
                     {imageUploadStates.length > 0 && (
                         <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                         {imageUploadStates.map((uploadState, index) => (
-                            <div key={uploadState.previewUrl || `existing-${index}`} className="relative group aspect-square border rounded-md p-1 shadow-sm bg-muted/30">
+                            <div key={uploadState.previewUrl || `existing-${index}-${uploadState.cloudinaryUrl}`} className="relative group aspect-square border rounded-md p-1 shadow-sm bg-muted/30">
                                 {uploadState.previewUrl && (
                                     <NextImage
                                         src={uploadState.previewUrl}
@@ -602,7 +610,7 @@ export default function EditPropertyPage() {
                                 {!uploadState.isLoading && uploadState.error && (
                                     <div className="absolute inset-0 bg-destructive/90 flex flex-col items-center justify-center p-2 rounded-md text-center">
                                         <p className="text-xs text-destructive-foreground mb-1">{uploadState.error}</p>
-                                        <Button variant="outline" size="sm" className="h-auto py-1 px-2 text-xs border-destructive-foreground text-destructive-foreground hover:bg-destructive-foreground/20" onClick={() => removeImage(index)}>Remove</Button>
+                                        <Button variant="outline" size="sm" type="button" className="h-auto py-1 px-2 text-xs border-destructive-foreground text-destructive-foreground hover:bg-destructive-foreground/20" onClick={() => removeImage(index)}>Remove</Button>
                                     </div>
                                 )}
                                 {!uploadState.isLoading && (uploadState.cloudinaryUrl || uploadState.isExisting) && !uploadState.error && (
@@ -649,3 +657,4 @@ export default function EditPropertyPage() {
   );
 }
 
+    
