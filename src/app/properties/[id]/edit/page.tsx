@@ -17,9 +17,13 @@ import * as z from 'zod';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSession } from 'next-auth/react';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, X, Image as ImageIcon, AlertTriangle, DollarSign } from 'lucide-react';
+import { Loader2, X, Image as ImageIcon, AlertTriangle, DollarSign, Calendar as CalendarIconLucide } from 'lucide-react';
 import NextImage from 'next/image';
 import type { Property as PropertyType, PricePeriod } from '@/lib/types';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { format, startOfDay } from 'date-fns';
+import type { DateRange } from 'react-day-picker';
 
 const MAX_IMAGES = 5;
 const MAX_FILE_SIZE_MB = 5;
@@ -42,7 +46,16 @@ const propertyEditSchema = z.object({
     })
   ).min(1, "At least one image is required.").max(MAX_IMAGES, `Maximum ${MAX_IMAGES} images.`).optional(),
   amenities: z.array(z.string()).optional(),
-  // availableFrom and availableTo could be added here if needed for editing
+  availableFrom: z.date().optional(),
+  availableTo: z.date().optional(),
+}).refine(data => {
+  if (data.availableFrom && data.availableTo) {
+    return data.availableTo >= data.availableFrom;
+  }
+  return true;
+}, {
+  message: "Availability end date cannot be before start date.",
+  path: ["availableTo"],
 });
 
 type PropertyEditFormData = z.infer<typeof propertyEditSchema>;
@@ -69,13 +82,16 @@ export default function EditPropertyPage() {
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
   const [imageUploadStates, setImageUploadStates] = useState<Array<{ file?: File; isLoading: boolean; error?: string; cloudinaryUrl?: string; previewUrl?: string; isExisting?: boolean }>>([]);
   const [fileInputKey, setFileInputKey] = useState(Date.now());
+  const [availabilityDateRange, setAvailabilityDateRange] = useState<DateRange | undefined>(undefined);
 
 
-  const { control, handleSubmit, formState: { errors }, setValue, reset, watch } = useForm<PropertyEditFormData>({
+  const { control, handleSubmit, formState: { errors }, setValue, reset, watch, trigger } = useForm<PropertyEditFormData>({
     resolver: zodResolver(propertyEditSchema),
     defaultValues: {
       images: [],
-      pricePeriod: "nightly", // Default for new entries if not set by fetched data
+      pricePeriod: "nightly",
+      availableFrom: undefined,
+      availableTo: undefined,
     }
   });
 
@@ -112,7 +128,7 @@ export default function EditPropertyPage() {
           }
 
           setPropertyData(data);
-          reset({
+          const defaultValues: PropertyEditFormData = {
             title: data.title,
             description: data.description,
             type: data.type,
@@ -123,8 +139,22 @@ export default function EditPropertyPage() {
             bedrooms: data.bedrooms,
             bathrooms: data.bathrooms,
             maxGuests: data.maxGuests,
-          });
+            availableFrom: data.availableFrom ? new Date(data.availableFrom) : undefined,
+            availableTo: data.availableTo ? new Date(data.availableTo) : undefined,
+            images: (data.images || []).map(url => ({ url })),
+            amenities: data.amenities || []
+          };
+          reset(defaultValues);
           setSelectedAmenities(data.amenities || []);
+
+          if (data.availableFrom || data.availableTo) {
+            setAvailabilityDateRange({
+              from: data.availableFrom ? new Date(data.availableFrom) : undefined,
+              to: data.availableTo ? new Date(data.availableTo) : undefined,
+            });
+          } else {
+            setAvailabilityDateRange(undefined);
+          }
 
           const existingImages = (data.images || []).map(url => ({
             cloudinaryUrl: url,
@@ -133,7 +163,9 @@ export default function EditPropertyPage() {
             isExisting: true,
           }));
           setImageUploadStates(existingImages);
-          replaceImageFormFields(existingImages.map(img => ({ url: img.cloudinaryUrl! })));
+          // `replaceImageFormFields` is already called by `reset` if images are part of defaultValues with correct structure.
+          // If `reset` doesn't handle `useFieldArray` for images, uncomment this:
+          // replaceImageFormFields(existingImages.map(img => ({ url: img.cloudinaryUrl! })));
 
         } catch (err: any) {
           console.error("Error fetching property for edit:", err);
@@ -145,6 +177,15 @@ export default function EditPropertyPage() {
       fetchProperty();
     }
   }, [propertyId, authStatus, session, reset, replaceImageFormFields]);
+  
+  useEffect(() => {
+    setValue('availableFrom', availabilityDateRange?.from);
+    setValue('availableTo', availabilityDateRange?.to);
+    if (availabilityDateRange?.from || availabilityDateRange?.to) { // Trigger validation if either is set
+        trigger(['availableFrom', 'availableTo']);
+    }
+  }, [availabilityDateRange, setValue, trigger]);
+
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -229,23 +270,55 @@ export default function EditPropertyPage() {
     }
 
     const changedData: Partial<PropertyEditFormData> = {};
+    let hasChanges = false;
+
     (Object.keys(data) as Array<keyof PropertyEditFormData>).forEach(key => {
-        if (data[key] !== undefined && data[key] !== propertyData?.[key as keyof PropertyType]) {
-           if (key === 'images') return;
-            (changedData as any)[key] = data[key];
+        if (key === 'images' || key === 'amenities' || key === 'availableFrom' || key === 'availableTo') return; // Handle separately
+
+        const formValue = data[key];
+        const originalValue = propertyData?.[key as keyof PropertyType];
+        
+        // Ensure we handle undefined vs null vs empty string consistently if needed for your backend
+        // For simple comparison:
+        if (formValue !== originalValue && !(formValue === undefined && originalValue == null)) { // Check if actually changed
+            (changedData as any)[key] = formValue;
+            hasChanges = true;
         }
     });
-
-    // Ensure images and amenities are included if they are the only changes or part of changes
-    if (finalImageUrls.map(img=>img.url).join(',') !== (propertyData?.images || []).join(',')) {
+    
+    // Handle images
+    const originalImageUrls = (propertyData?.images || []).join(',');
+    const newImageUrls = finalImageUrls.map(img => img.url).join(',');
+    if (originalImageUrls !== newImageUrls) {
       changedData.images = finalImageUrls;
+      hasChanges = true;
     }
-    if (selectedAmenities.join(',') !== (propertyData?.amenities || []).join(',')) {
+
+    // Handle amenities
+    const originalAmenities = (propertyData?.amenities || []).slice().sort().join(',');
+    const newAmenities = selectedAmenities.slice().sort().join(',');
+    if (originalAmenities !== newAmenities) {
       changedData.amenities = selectedAmenities;
+      hasChanges = true;
+    }
+
+    // Handle availability dates
+    const originalAvailableFromTime = propertyData?.availableFrom ? startOfDay(new Date(propertyData.availableFrom)).getTime() : null;
+    const newAvailableFromTime = data.availableFrom ? startOfDay(new Date(data.availableFrom)).getTime() : null;
+    if (newAvailableFromTime !== originalAvailableFromTime) {
+        changedData.availableFrom = data.availableFrom ? startOfDay(new Date(data.availableFrom)) : undefined; // Send undefined to potentially unset
+        hasChanges = true;
+    }
+
+    const originalAvailableToTime = propertyData?.availableTo ? startOfDay(new Date(propertyData.availableTo)).getTime() : null;
+    const newAvailableToTime = data.availableTo ? startOfDay(new Date(data.availableTo)).getTime() : null;
+    if (newAvailableToTime !== originalAvailableToTime) {
+        changedData.availableTo = data.availableTo ? startOfDay(new Date(data.availableTo)) : undefined; // Send undefined to potentially unset
+        hasChanges = true;
     }
 
 
-    if (Object.keys(changedData).length === 0) {
+    if (!hasChanges) {
         toast({ title: "No Changes", description: "No changes were made to the property.", variant: "default" });
         setFormIsSubmitting(false);
         router.push(`/properties/${propertyId}`);
@@ -432,6 +505,48 @@ export default function EditPropertyPage() {
                 </div>
 
                 <div className="space-y-2">
+                    <Label htmlFor="availability-dates-edit">Availability Dates</Label>
+                    <Popover>
+                        <PopoverTrigger asChild>
+                        <Button
+                            id="availability-dates-edit"
+                            variant="outline"
+                            className={`w-full justify-start text-left font-normal ${!availabilityDateRange && "text-muted-foreground"}`}
+                            disabled={formIsSubmitting}
+                        >
+                            <CalendarIconLucide className="mr-2 h-4 w-4" />
+                            {availabilityDateRange?.from ? (
+                            availabilityDateRange.to ? (
+                                <>
+                                {format(availabilityDateRange.from, "LLL dd, y")} -{" "}
+                                {format(availabilityDateRange.to, "LLL dd, y")}
+                                </>
+                            ) : (
+                                format(availabilityDateRange.from, "LLL dd, y")
+                            )
+                            ) : (
+                            <span>Pick availability period (optional)</span>
+                            )}
+                        </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                            initialFocus
+                            mode="range"
+                            defaultMonth={availabilityDateRange?.from}
+                            selected={availabilityDateRange}
+                            onSelect={setAvailabilityDateRange}
+                            numberOfMonths={2}
+                            disabled={(date) => date < startOfDay(new Date())}
+                        />
+                        </PopoverContent>
+                    </Popover>
+                    {errors.availableFrom && <p className="text-sm text-destructive">{errors.availableFrom.message}</p>}
+                    {errors.availableTo && <p className="text-sm text-destructive">{errors.availableTo.message}</p>}
+                </div>
+
+
+                <div className="space-y-2">
                     <Label>Amenities</Label>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3 border p-4 rounded-md max-h-60 overflow-y-auto">
                     {availableAmenitiesList.map(amenity => (
@@ -533,3 +648,4 @@ export default function EditPropertyPage() {
     </div>
   );
 }
+
