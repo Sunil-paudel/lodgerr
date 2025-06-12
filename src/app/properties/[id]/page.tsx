@@ -105,25 +105,43 @@ const PropertyDetailsPage = () => {
   }, [propertyId]);
 
   useEffect(() => {
-    // Fetch active bookings only if property.id is available
-    if (property?.id) {
+    if (property?.id && !isLoading) { // Fetch only if property is loaded and not currently loading
       console.log(`[PropertyDetailsPage] Property ID ${property.id} available. Fetching active bookings.`);
       setIsLoadingActiveBookings(true);
-      setActiveBookingsError(null); // Reset error before new fetch
+      setActiveBookingsError(null); 
       const fetchActiveBookingsForProperty = async () => {
         try {
           const response = await fetch(`/api/properties/${property.id}/active-bookings`);
           if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ message: "Failed to parse error from active bookings API." }));
-            console.warn(`[PropertyDetailsPage] Failed to fetch active bookings for ${property.id}: ${response.status}`, errorData);
-            throw new Error(errorData.message || `Failed to fetch active bookings data (${response.status})`);
+            let errorResponseMessage = `Failed to fetch active bookings (${response.status} ${response.statusText || ''})`;
+            let errorDetailsForConsole = "";
+            try {
+              // Try to parse the error response as JSON first
+              const errorData = await response.json();
+              if (errorData && errorData.message) {
+                errorResponseMessage = errorData.message;
+              }
+              errorDetailsForConsole = JSON.stringify(errorData);
+            } catch (jsonError) {
+              // If JSON parsing fails, try to read the response as text
+              try {
+                const errorText = await response.text();
+                errorDetailsForConsole = errorText;
+                console.warn(`[PropertyDetailsPage] Non-JSON error response body from /active-bookings for ${property.id}:`, errorText);
+                // Keep the generic errorResponseMessage or augment if specific text is useful
+              } catch (textError) {
+                console.warn(`[PropertyDetailsPage] Could not read error response body from /active-bookings for ${property.id}.`);
+              }
+            }
+            console.warn(`[PropertyDetailsPage] Failed to fetch active bookings for ${property.id}. Status: ${response.status}. Details: ${errorDetailsForConsole}`);
+            throw new Error(errorResponseMessage);
           }
           const data: ActiveBookingRange[] = await response.json();
           console.log(`[PropertyDetailsPage] Active bookings data received for property ${property.id}:`, data);
           setActiveBookings(data);
         } catch (error: any) {
           console.error(`[PropertyDetailsPage] Error fetching active bookings for property ${property.id}:`, error);
-          setActiveBookings(null); // Ensure activeBookings is null on error
+          setActiveBookings(null); 
           setActiveBookingsError(error.message || "Could not load current booking availability for this property.");
         } finally {
           setIsLoadingActiveBookings(false);
@@ -131,12 +149,11 @@ const PropertyDetailsPage = () => {
       };
       fetchActiveBookingsForProperty();
     } else if (!isLoading && !property) {
-      // If main property loading is done and there's no property, no need to load bookings
       console.log("[PropertyDetailsPage] No property data, skipping active bookings fetch.");
       setIsLoadingActiveBookings(false);
       setActiveBookings(null);
     }
-  }, [property?.id, isLoading]); // Depend on property.id and main isLoading state
+  }, [property?.id, isLoading]); 
 
 
   useEffect(() => {
@@ -255,9 +272,8 @@ const PropertyDetailsPage = () => {
             setSelectedDateRange(undefined); 
             setCurrentBookingPriceDetails(null);
             
-            // Re-fetch active bookings to update calendar and list
             if (property && property.id) {
-              setIsLoadingActiveBookings(true); // Show loading for active bookings section
+              setIsLoadingActiveBookings(true); 
               const bookingsResponse = await fetch(`/api/properties/${property.id}/active-bookings`);
               if (bookingsResponse.ok) {
                 const newActiveBookings = await bookingsResponse.json();
@@ -265,7 +281,6 @@ const PropertyDetailsPage = () => {
                 setActiveBookings(newActiveBookings);
               } else {
                 console.warn(`[PropertyDetailsPage] Failed to re-fetch active bookings after conflict for ${property.id}`);
-                setActiveBookings(null); // Or keep old state, depending on desired UX for this failure
                 setActiveBookingsError("Failed to update availability after booking conflict.");
               }
               setIsLoadingActiveBookings(false);
@@ -481,7 +496,6 @@ const PropertyDetailsPage = () => {
                 <CalendarX size={20} className="mr-2 text-destructive" />
                 Currently Booked Periods
               </h3>
-              {/* Log current state values for debugging the display of booked periods */}
               { console.log('[PropertyDetailsPage Render] About to render booked periods. isLoadingActiveBookings:', isLoadingActiveBookings, 'activeBookingsError:', activeBookingsError, 'activeBookings:', activeBookings) }
               {isLoadingActiveBookings ? (
                 <div className="space-y-2">
@@ -604,3 +618,5 @@ const PropertyDetailsPage = () => {
 };
 
 export default PropertyDetailsPage;
+
+    
