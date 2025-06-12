@@ -25,6 +25,7 @@ import { useParams, useRouter } from 'next/navigation'; // For client components
 import { useEffect, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import type { DateRange } from 'react-day-picker';
+import { format, isValid as isValidDate } from 'date-fns';
 
 
 // Metadata generation for client components should be handled differently.
@@ -187,6 +188,18 @@ const PropertyDetailsPage = () => {
 
   const hasImages = property.images && property.images.length > 0;
 
+  const formattedAvailableFrom = property.availableFrom && isValidDate(new Date(property.availableFrom)) ? format(new Date(property.availableFrom), 'LLL dd, yyyy') : null;
+  const formattedAvailableTo = property.availableTo && isValidDate(new Date(property.availableTo)) ? format(new Date(property.availableTo), 'LLL dd, yyyy') : null;
+  let availabilityText = "";
+  if (formattedAvailableFrom && formattedAvailableTo) {
+    availabilityText = `Available from ${formattedAvailableFrom} to ${formattedAvailableTo}`;
+  } else if (formattedAvailableFrom) {
+    availabilityText = `Available from ${formattedAvailableFrom}`;
+  } else if (formattedAvailableTo) {
+    availabilityText = `Available until ${formattedAvailableTo}`;
+  }
+
+
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <Header />
@@ -271,6 +284,19 @@ const PropertyDetailsPage = () => {
                 </div>
             </div>
 
+            {availabilityText && (
+              <div className="py-6 border-b border-border">
+                <h3 className="text-xl font-semibold mb-2 font-headline flex items-center">
+                  <CalendarIconLucide size={20} className="mr-2 text-primary" />
+                  Host-Defined Availability
+                </h3>
+                <p className="text-foreground/90">{availabilityText}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Note: Specific dates within this period might already be booked. Please check the calendar below.
+                </p>
+              </div>
+            )}
+
             <div className="py-6 border-b border-border">
               <h3 className="text-xl font-semibold mb-3 font-headline">About this place</h3>
               <p className="text-foreground/90 whitespace-pre-line leading-relaxed">{property.description}</p>
@@ -311,6 +337,9 @@ const PropertyDetailsPage = () => {
                   onDateChange={setSelectedDateRange}
                   price={property.price}
                   pricePeriod={property.pricePeriod}
+                  // Pass property's availability window to the calendar to restrict selectable dates
+                  availableFrom={property.availableFrom ? new Date(property.availableFrom) : undefined}
+                  availableTo={property.availableTo ? new Date(property.availableTo) : undefined}
                 />
               </div>
 
@@ -334,3 +363,5 @@ const PropertyDetailsPage = () => {
 };
 
 export default PropertyDetailsPage;
+
+    
