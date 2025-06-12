@@ -31,7 +31,7 @@ export interface Property { // Corresponds to Listings
   };
   rating?: number; // Kept from original, likely an aggregate
   reviewsCount?: number; // Kept from original, likely an aggregate
-  createdAt: Date;
+  createdAt: Date; // Added for sorting
 }
 
 export interface Booking {

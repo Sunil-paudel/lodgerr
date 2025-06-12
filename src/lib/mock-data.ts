@@ -1,5 +1,7 @@
 import type { Property } from './types';
 
+// Adding createdAt dates to mock properties for sorting
+// Simulating newer properties having later dates
 export const mockProperties: Property[] = [
   {
     id: '1',
@@ -24,6 +26,7 @@ export const mockProperties: Property[] = [
     rating: 4.8,
     reviewsCount: 120,
     type: 'House',
+    createdAt: new Date('2023-01-15T10:00:00Z'),
   },
   {
     id: '2',
@@ -48,13 +51,14 @@ export const mockProperties: Property[] = [
     rating: 4.5,
     reviewsCount: 85,
     type: 'Apartment',
+    createdAt: new Date('2023-03-20T14:30:00Z'),
   },
   {
     id: '3',
     title: 'Rustic Cabin in the Woods',
     description: 'Escape to this charming cabin surrounded by nature. Perfect for hiking, fishing, and unwinding by the fireplace.',
     location: 'Asheville, North Carolina',
-    address: '789 Forest Lane, Asheville, NC',
+    address: '789 Forest Lane, Asheville,NC',
     pricePerNight: 120,
     images: [
       'https://placehold.co/600x400.png',
@@ -72,8 +76,9 @@ export const mockProperties: Property[] = [
     rating: 4.9,
     reviewsCount: 200,
     type: 'House',
+    createdAt: new Date('2023-05-10T09:00:00Z'),
   },
-    {
+  {
     id: '4',
     title: 'Chic Studio in Arts District',
     description: 'A bright and airy studio apartment located in the vibrant arts district. Walk to galleries, cafes, and boutiques.',
@@ -96,6 +101,7 @@ export const mockProperties: Property[] = [
     rating: 4.7,
     reviewsCount: 95,
     type: 'Apartment',
+    createdAt: new Date('2023-10-01T12:00:00Z'),
   },
   {
     id: '5',
@@ -120,13 +126,16 @@ export const mockProperties: Property[] = [
     rating: 4.9,
     reviewsCount: 150,
     type: 'House',
+    createdAt: new Date('2024-02-15T11:00:00Z'), // Newest
   },
 ];
 
 export const getProperties = async (): Promise<Property[]> => {
   // Simulate API delay
   await new Promise(resolve => setTimeout(resolve, 500));
-  return mockProperties;
+  // Sort properties by createdAt date in descending order (newest first)
+  const sortedProperties = [...mockProperties].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  return sortedProperties;
 };
 
 export const getPropertyById = async (id: string): Promise<Property | undefined> => {

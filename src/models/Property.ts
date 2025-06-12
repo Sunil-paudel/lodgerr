@@ -2,9 +2,13 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import type { Property as PropertyType } from '@/lib/types';
 
-export interface PropertyDocument extends Omit<PropertyType, 'id' | 'createdAt' | 'hostId' | 'images'>, Document {
+// PropertyDocument now correctly reflects that 'createdAt' comes from timestamps:true
+// and is part of PropertyType. The Omit should not remove 'createdAt' if it's in PropertyType.
+// However, Mongoose's timestamps will add createdAt and updatedAt automatically.
+export interface PropertyDocument extends Omit<PropertyType, 'id' | 'hostId' | 'images'>, Document {
   hostId: mongoose.Types.ObjectId;
-  images: string[]; // Changed to array of strings for direct URL storage
+  images: string[]; 
+  // createdAt and updatedAt will be automatically added by Mongoose due to timestamps: true
 }
 
 const propertySchema = new Schema<PropertyDocument>(
@@ -42,7 +46,7 @@ const propertySchema = new Schema<PropertyDocument>(
       required: true,
       min: 1,
     },
-    images: { // Storing as an array of image URL strings
+    images: { 
       type: [String], 
       validate: {
         validator: function(v: string[]) {
@@ -86,9 +90,11 @@ const propertySchema = new Schema<PropertyDocument>(
       default: 0,
     },
   },
-  { timestamps: true }
+  { timestamps: true } // This automatically adds createdAt and updatedAt fields
 );
 
 propertySchema.index({ location: 'text', title: 'text', description: 'text' }); 
+// MongoDB will automatically create an index on createdAt if you query by it often.
+// Or you can explicitly add: propertySchema.index({ createdAt: -1 });
 
 export default mongoose.models.Property || mongoose.model<PropertyDocument>("Property", propertySchema);
