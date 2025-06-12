@@ -3,7 +3,7 @@ import Image from 'next/image';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
-import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, Home as HomeIcon, ImageIcon, UserCircle, Calendar as CalendarIconLucide, DollarSign } from 'lucide-react';
+import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, Home as HomeIcon, ImageIcon, UserCircle, Calendar as CalendarIconLucide, DollarSign, Wifi } from 'lucide-react';
 import type { Metadata } from 'next';
 import { PropertyAmenityIcon } from '@/components/property/PropertyAmenityIcon';
 import Link from 'next/link';
@@ -14,6 +14,13 @@ import PropertyModel from '@/models/Property';
 import type { Property as PropertyType } from '@/lib/types';
 import mongoose from 'mongoose';
 import { PropertyBookingCalendar } from '@/components/property/PropertyBookingCalendar';
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from "@/components/ui/carousel"
 
 
 interface PropertyDetailsPageProps {
@@ -39,8 +46,8 @@ async function fetchPropertyById(id: string): Promise<PropertyType | null> {
       id: _id.toString(),
       hostId: (hostId as mongoose.Types.ObjectId).toString(),
       images: propertyDoc.images || [],
-      price: propertyDoc.price, // Added
-      pricePeriod: propertyDoc.pricePeriod, // Added
+      price: propertyDoc.price, 
+      pricePeriod: propertyDoc.pricePeriod, 
       createdAt: createdAt instanceof Date ? createdAt : new Date(createdAt),
       updatedAt: updatedAt instanceof Date ? updatedAt : new Date(updatedAt),
       host: {
@@ -91,9 +98,8 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
   }
 
   const isOwner = session?.user?.id === property.hostId;
+  const isAdmin = session?.user?.role === 'admin';
 
-  const mainImageHint = property.type === 'House' ? 'house main' : property.type === 'Apartment' ? 'apartment main' : 'accommodation main';
-  const detailImageHint = property.type === 'House' ? 'house detail' : property.type === 'Apartment' ? 'apartment detail' : 'accommodation detail';
   const hostAvatarHint = "host avatar";
 
   const getPricePeriodText = (period: PropertyType['pricePeriod']) => {
@@ -107,6 +113,8 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
         return '/ night';
     }
   };
+
+  const hasImages = property.images && property.images.length > 0;
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -127,7 +135,7 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
                     )}
                 </div>
             </div>
-            {isOwner && (
+            {(isOwner || isAdmin) && (
               <Button asChild variant="outline" className="mt-4 md:mt-0 border-primary text-primary hover:bg-primary/10">
                 <Link href={`/properties/${property.id}/edit`}>
                   <Edit3 className="mr-2 h-4 w-4" /> Edit Property
@@ -136,37 +144,47 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
             )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 md:grid-rows-2 gap-2 mb-8 max-h-[550px] overflow-hidden rounded-lg shadow-lg">
-            <div className="relative md:col-span-2 md:row-span-2 h-64 md:h-full">
-                 <Image
-                    src={property.images && property.images.length > 0 ? property.images[0] : 'https://placehold.co/800x600.png'}
-                    alt={`${property.title} main image`}
-                    fill
-                    sizes="(max-width: 768px) 100vw, 50vw"
-                    className="object-cover"
-                    data-ai-hint={property.images && property.images.length > 0 ? mainImageHint : "placeholder property"}
-                    priority
-                  />
+        {/* Image Carousel Section */}
+        <div className="mb-8">
+          {hasImages ? (
+            <Carousel
+              opts={{
+                align: "start",
+                loop: true,
+              }}
+              className="w-full max-w-4xl mx-auto"
+            >
+              <CarouselContent>
+                {property.images.map((imgUrl, index) => (
+                  <CarouselItem key={index} className="md:basis-full">
+                    <div className="relative aspect-video md:aspect-[16/9] rounded-lg overflow-hidden shadow-lg">
+                      <Image
+                        src={imgUrl}
+                        alt={`${property.title} image ${index + 1}`}
+                        fill
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 60vw"
+                        className="object-cover"
+                        priority={index === 0} 
+                        data-ai-hint={property.type === 'House' ? `house photo ${index+1}` : property.type === 'Apartment' ? `apartment photo ${index+1}` : `accommodation photo ${index+1}`}
+                      />
+                    </div>
+                  </CarouselItem>
+                ))}
+              </CarouselContent>
+              {property.images.length > 1 && (
+                <>
+                  <CarouselPrevious className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-10 bg-background/70 hover:bg-background text-foreground disabled:bg-background/40" />
+                  <CarouselNext className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-10 bg-background/70 hover:bg-background text-foreground disabled:bg-background/40" />
+                </>
+              )}
+            </Carousel>
+          ) : (
+            <div className="relative aspect-video md:aspect-[16/9] rounded-lg overflow-hidden shadow-lg bg-muted flex items-center justify-center max-w-4xl mx-auto">
+              <ImageIcon size={64} className="text-muted-foreground/50" data-ai-hint="placeholder property" />
             </div>
-            {(property.images || []).slice(1, 5).map((img, index) => (
-                <div key={index} className="relative h-32 md:h-full">
-                  <Image
-                    src={img}
-                    alt={`${property.title} image ${index + 2}`}
-                    fill
-                    sizes="(max-width: 768px) 50vw, 25vw"
-                    className="object-cover"
-                    data-ai-hint={detailImageHint}
-                  />
-                </div>
-              ))}
-            {Array.from({ length: Math.max(0, 4 - ((property.images || []).length > 0 ? (property.images || []).length - 1 : 0)) }).map((_, i) => (
-                 ((property.images || []).length === 0 && i === 0) ? null :
-                <div key={`placeholder-${i}`} className="bg-muted h-32 md:h-full flex items-center justify-center">
-                    <ImageIcon size={48} className="text-muted-foreground/50" data-ai-hint="placeholder detail" />
-                </div>
-            ))}
+          )}
         </div>
+
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
           <div className="lg:col-span-2">
@@ -213,7 +231,8 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
           <div className="lg:col-span-1">
             <div className="sticky top-24 p-6 border border-border rounded-lg shadow-xl bg-card">
               <p className="text-2xl font-bold mb-1">
-                ${property.price}{' '}
+                <DollarSign className="inline h-6 w-6 mr-1 relative -top-0.5" />
+                {property.price}{' '}
                 <span className="text-base font-normal text-muted-foreground">{getPricePeriodText(property.pricePeriod)}</span>
               </p>
               {property.rating !== undefined && property.rating !== null && (
@@ -241,3 +260,4 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
 };
 
 export default PropertyDetailsPage;
+
