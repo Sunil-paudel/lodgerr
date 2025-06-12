@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/utils/db';
 import BookedDateRangeModel, { type BookedDateRangeDocument } from '@/models/BookedDateRange';
-import type { BookedDateRange as BookedDateRangeType } from '@/lib/types';
+import type { BookedDateRange as BookedDateRangeType, BookingStatus } from '@/lib/types';
 
 export async function GET(
   request: NextRequest,
@@ -19,13 +19,16 @@ export async function GET(
 
   try {
     await connectDB();
-    console.log(`[API /properties/${propertyId}/booked-ranges GET] Fetching booked ranges for property ID: ${propertyId}`);
+    console.log(`[API /properties/${propertyId}/booked-ranges GET] Fetching relevant booked ranges for property ID: ${propertyId}`);
 
-    const bookedRangesDocs = await BookedDateRangeModel.find({ 
-      propertyId: new mongoose.Types.ObjectId(propertyId) 
+    const relevantStatuses: BookingStatus[] = ['pending_payment', 'pending_confirmation', 'confirmed_by_host'];
+
+    const bookedRangesDocs = await BookedDateRangeModel.find({
+      propertyId: new mongoose.Types.ObjectId(propertyId),
+      status: { $in: relevantStatuses } // Filter for currently booked or pending periods
     }).lean();
 
-    console.log(`[API /properties/${propertyId}/booked-ranges GET] Found ${bookedRangesDocs.length} booked range documents.`);
+    console.log(`[API /properties/${propertyId}/booked-ranges GET] Found ${bookedRangesDocs.length} relevant booked range documents.`);
 
     const bookedRanges: BookedDateRangeType[] = bookedRangesDocs.map(doc => {
       const range = doc as unknown as BookedDateRangeDocument; // Cast to include _id, createdAt, etc.
