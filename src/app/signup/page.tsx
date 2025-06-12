@@ -68,9 +68,11 @@ export default function SignUpPage() {
         setPassword('');
         setConfirmPassword('');
       } else {
+        // Prioritize showing specific error from backend if available
+        const description = result.error || result.message || "An error occurred during signup.";
         toast({
           title: "Signup Failed",
-          description: result.message || "An error occurred during signup.",
+          description: description,
           variant: "destructive",
         });
       }
@@ -78,7 +80,7 @@ export default function SignUpPage() {
       console.error("Signup form submission error:", error);
       toast({
         title: "Error",
-        description: "Could not connect to the server. Please try again later.",
+        description: "Could not connect to the server or an unexpected client-side error occurred. Please try again later.",
         variant: "destructive",
       });
     } finally {

@@ -70,8 +70,22 @@ export const POST = async (request: NextRequest) => {
     }
 
     // General server error
+    let errorDetails = "Unknown server error.";
+    if (err.message) {
+      errorDetails = err.message;
+    }
+    if (err.name) {
+      errorDetails = `${err.name}: ${errorDetails}`;
+    }
+    if (err.code) {
+        errorDetails = `Error Code ${err.code} - ${errorDetails}`;
+    }
+
     return NextResponse.json(
-      { message: "An internal server error occurred during signup. Please try again later.", error: err.message },
+      { 
+        message: "An internal server error occurred during signup. Please try again later.", 
+        error: errorDetails // Sending a more detailed error message if available
+      },
       { status: 500 }
     );
   }
