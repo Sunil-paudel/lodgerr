@@ -16,18 +16,22 @@ const PropertyCard = ({ property }: PropertyCardProps) => {
   else if (property.type === 'Room') aiHint = "house room";
   else if (property.type === 'Unique Stay') aiHint = "unique accommodation";
 
+  const imageSrc = property.images && property.images.length > 0 ? property.images[0] : 'https://placehold.co/600x400.png';
+  const imageAlt = property.images && property.images.length > 0 ? property.title : "Placeholder image";
+  const finalAiHint = property.images && property.images.length > 0 ? aiHint : "placeholder property";
+
 
   return (
     <Card className="overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col h-full rounded-lg">
       <CardHeader className="p-0 relative">
         <Link href={`/properties/${property.id}`} className="block aspect-[4/3] relative">
           <Image
-            src={property.images[0]}
-            alt={property.title}
+            src={imageSrc}
+            alt={imageAlt}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
             className="object-cover"
-            data-ai-hint={aiHint}
+            data-ai-hint={finalAiHint}
           />
         </Link>
       </CardHeader>
