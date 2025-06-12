@@ -3,6 +3,15 @@ export type UserRole = 'guest' | 'host' | 'admin';
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 export type PricePeriod = 'nightly' | 'weekly' | 'monthly';
 
+// New type for booking status
+export type BookingStatus = 
+  | 'pending_confirmation' 
+  | 'confirmed_by_host' 
+  | 'rejected_by_host' 
+  | 'cancelled_by_guest' 
+  | 'completed' 
+  | 'no_show';
+
 export interface User {
   name: string;
   email: string;
@@ -18,8 +27,8 @@ export interface Property {
   hostId: string;
   title: string;
   description: string;
-  price: number; // Changed from pricePerNight
-  pricePeriod: PricePeriod; // Added
+  price: number; 
+  pricePeriod: PricePeriod; 
   location: string;
   address?: string;
   maxGuests: number;
@@ -41,13 +50,24 @@ export interface Property {
 
 export interface Booking {
   id: string;
-  listingId: string;
+  listingId: string; // Should be Property ID
   guestId: string;
   startDate: Date;
   endDate: Date;
   totalPrice: number;
   paymentStatus: PaymentStatus;
+  bookingStatus: BookingStatus; // Added booking status
   createdAt: Date;
+  // Optional: Add guest details if needed directly on booking, or populate from User model
+  guestDetails?: {
+    name?: string | null;
+    email?: string | null;
+  };
+  // Optional: Add property details if needed, or populate from Property model
+  propertyDetails?: {
+    title?: string;
+    mainImage?: string;
+  }
 }
 
 export interface Review {

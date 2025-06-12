@@ -8,7 +8,7 @@ import connectDB from '@/utils/db';
 import Booking from '@/models/Booking';
 import PropertyModel from '@/models/Property';
 import * as z from 'zod';
-import { differenceInCalendarDays, differenceInCalendarWeeks, differenceInCalendarMonths, startOfDay } from 'date-fns';
+import { differenceInCalendarDays, startOfDay } from 'date-fns';
 
 const bookingSchema = z.object({
   propertyId: z.string().refine((val) => /^[0-9a-fA-F]{24}$/.test(val), {
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'Property not found.' }, { status: 404 });
     }
 
-    // Basic conflict check (can be expanded later to check existing bookings)
+    // Basic conflict check with property's general availability window
     if (property.availableFrom && startDate < startOfDay(new Date(property.availableFrom))) {
         return NextResponse.json({ message: 'Booking start date is before property availability window.' }, { status: 400 });
     }
@@ -60,22 +60,24 @@ export async function POST(request: NextRequest) {
     if (property.pricePeriod === 'nightly') {
       numberOfUnits = differenceInCalendarDays(endDate, startDate);
     } else if (property.pricePeriod === 'weekly') {
-      // For weekly, ensure it's at least a week.
-      // This logic might need refinement based on how partial weeks are handled.
       numberOfUnits = differenceInCalendarDays(endDate, startDate) / 7;
     } else if (property.pricePeriod === 'monthly') {
-      // Similar for monthly.
-      numberOfUnits = differenceInCalendarDays(endDate, startDate) / 30; // Approximation
+      numberOfUnits = differenceInCalendarDays(endDate, startDate) / 30; 
     }
 
-    if (numberOfUnits <= 0) {
+    if (numberOfUnits <= 0 && !(property.pricePeriod === 'nightly' && differenceInCalendarDays(endDate, startDate) === 0) ) {
         return NextResponse.json({ message: 'Booking duration is invalid for the selected price period.' }, { status: 400 });
     }
-    const totalPrice = property.price * numberOfUnits;
+    // Handle same-day booking for nightly rate as 1 night if necessary, or disallow.
+    // For simplicity, if it's 0 days (same day in/out), let's assume it's 1 unit for nightly.
+    if (property.pricePeriod === 'nightly' && numberOfUnits === 0 && differenceInCalendarDays(endDate, startDate) === 0) {
+        numberOfUnits = 1; // Or adjust business logic
+    }
+    
+    const totalPrice = property.price * Math.max(numberOfUnits, 1); // Ensure at least one unit of price if duration is minimal
 
 
-    // TODO: Advanced conflict detection - check if these dates overlap with existing bookings for this property.
-    // For now, we'll skip this and allow overlapping bookings for simplicity in this step.
+    // TODO: Advanced conflict detection - check if these dates overlap with existing CONFIRMED bookings.
 
     const newBooking = new Booking({
       listingId: propertyId,
@@ -83,12 +85,13 @@ export async function POST(request: NextRequest) {
       startDate: startOfDay(startDate),
       endDate: startOfDay(endDate),
       totalPrice,
-      paymentStatus: 'pending',
+      paymentStatus: 'pending', // Default payment status
+      bookingStatus: 'pending_confirmation', // Default booking status
     });
 
     await newBooking.save();
 
-    return NextResponse.json({ message: 'Booking request received. Awaiting confirmation.', bookingId: newBooking._id.toString() }, { status: 201 });
+    return NextResponse.json({ message: 'Booking request received. Awaiting host confirmation.', bookingId: newBooking._id.toString() }, { status: 201 });
 
   } catch (error: any) {
     console.error('[API /bookings POST] Error creating booking:', error);

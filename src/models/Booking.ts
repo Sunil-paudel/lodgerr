@@ -1,5 +1,6 @@
+
 import mongoose, { Schema, Document } from 'mongoose';
-import type { Booking as BookingType, PaymentStatus } from '@/lib/types';
+import type { Booking as BookingType, PaymentStatus, BookingStatus } from '@/lib/types';
 
 export interface BookingDocument extends Omit<BookingType, 'id' | 'createdAt' | 'listingId' | 'guestId'>, Document {
   listingId: mongoose.Types.ObjectId;
@@ -37,11 +38,30 @@ const bookingSchema = new Schema<BookingDocument>(
       required: true,
       default: 'pending',
     },
+    bookingStatus: { // Added bookingStatus field
+      type: String,
+      enum: [
+        'pending_confirmation', 
+        'confirmed_by_host', 
+        'rejected_by_host', 
+        'cancelled_by_guest',
+        'completed',
+        'no_show'
+      ] as BookingStatus[],
+      required: true,
+      default: 'pending_confirmation',
+    },
   },
   { timestamps: true }
 );
 
 bookingSchema.index({ listingId: 1, startDate: 1, endDate: 1 });
 bookingSchema.index({ guestId: 1 });
+bookingSchema.index({ hostId: 1, bookingStatus: 1 }); // Index for host to query their bookings by status
+
+// Populate hostId on the booking for easier querying by host
+// This assumes you might add a hostId field to the booking schema itself,
+// or you'll do a multi-step lookup: Booking -> Property -> hostId
+// For now, we'll rely on looking up bookings by propertyId and then checking property.hostId
 
 export default mongoose.models.Booking || mongoose.model<BookingDocument>("Booking", bookingSchema);
