@@ -1,10 +1,10 @@
 import type { Property } from './types';
 
-// Adding createdAt dates to mock properties for sorting
-// Simulating newer properties having later dates
+// Adding createdAt dates and hostIds to mock properties
 export const mockProperties: Property[] = [
   {
     id: '1',
+    hostId: 'host-alice-001', // Example hostId
     title: 'Cozy Beachfront Cottage',
     description: 'A beautiful cottage right on the beach, perfect for a relaxing getaway. Enjoy stunning ocean views and direct beach access.',
     location: 'Malibu, California',
@@ -30,6 +30,7 @@ export const mockProperties: Property[] = [
   },
   {
     id: '2',
+    hostId: 'user-logged-in-id', // Assigning a specific ID for testing logged-in user's property
     title: 'Modern Downtown Apartment',
     description: 'Stylish apartment in the heart of the city. Close to all major attractions, restaurants, and nightlife. Features a rooftop terrace.',
     location: 'New York, New York',
@@ -45,7 +46,7 @@ export const mockProperties: Property[] = [
     maxGuests: 2,
     amenities: ['WiFi', 'Kitchen', 'Elevator', 'Gym', 'Rooftop Access'],
     host: {
-      name: 'Bob The Builder',
+      name: 'Bob The Builder', // This would ideally be the logged-in user's name
       avatarUrl: 'https://placehold.co/100x100.png',
     },
     rating: 4.5,
@@ -55,6 +56,7 @@ export const mockProperties: Property[] = [
   },
   {
     id: '3',
+    hostId: 'host-carol-003', // Example hostId
     title: 'Rustic Cabin in the Woods',
     description: 'Escape to this charming cabin surrounded by nature. Perfect for hiking, fishing, and unwinding by the fireplace.',
     location: 'Asheville, North Carolina',
@@ -80,6 +82,7 @@ export const mockProperties: Property[] = [
   },
   {
     id: '4',
+    hostId: 'user-logged-in-id', // Assigning a specific ID for testing logged-in user's property
     title: 'Chic Studio in Arts District',
     description: 'A bright and airy studio apartment located in the vibrant arts district. Walk to galleries, cafes, and boutiques.',
     location: 'Paris, France',
@@ -95,16 +98,17 @@ export const mockProperties: Property[] = [
     maxGuests: 2,
     amenities: ['WiFi', 'Kitchenette', 'Air Conditioning', 'Public Transport Access'],
     host: {
-      name: 'David Copperfield',
+      name: 'David Copperfield', // This would ideally be the logged-in user's name
       avatarUrl: 'https://placehold.co/100x100.png',
     },
     rating: 4.7,
     reviewsCount: 95,
     type: 'Apartment',
-    createdAt: new Date('2023-10-01T12:00:00Z'),
+    createdAt: new Date('2023-10-01T12:00:00Z'), // This one is newer than property '2' also by user-logged-in-id
   },
   {
     id: '5',
+    hostId: 'host-eva-005', // Example hostId
     title: 'Spacious Villa with Pool',
     description: 'Luxurious villa with a private pool and stunning mountain views. Ideal for families or groups seeking comfort and privacy.',
     location: 'Tuscany, Italy',
@@ -126,7 +130,7 @@ export const mockProperties: Property[] = [
     rating: 4.9,
     reviewsCount: 150,
     type: 'House',
-    createdAt: new Date('2024-02-15T11:00:00Z'), // Newest
+    createdAt: new Date('2024-02-15T11:00:00Z'), // Newest overall
   },
 ];
 
