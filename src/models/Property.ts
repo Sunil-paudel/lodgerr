@@ -1,8 +1,10 @@
+
 import mongoose, { Schema, Document } from 'mongoose';
 import type { Property as PropertyType } from '@/lib/types';
 
-export interface PropertyDocument extends Omit<PropertyType, 'id' | 'createdAt' | 'hostId'>, Document {
+export interface PropertyDocument extends Omit<PropertyType, 'id' | 'createdAt' | 'hostId' | 'images'>, Document {
   hostId: mongoose.Types.ObjectId;
+  images: string[]; // Changed to array of strings for direct URL storage
 }
 
 const propertySchema = new Schema<PropertyDocument>(
@@ -35,13 +37,19 @@ const propertySchema = new Schema<PropertyDocument>(
       type: String,
       trim: true,
     },
-    maxGuests: { // Changed from numGuests to align with types.ts
+    maxGuests: { 
       type: Number,
       required: true,
       min: 1,
     },
-    images: {
-      type: [String],
+    images: { // Storing as an array of image URL strings
+      type: [String], 
+      validate: {
+        validator: function(v: string[]) {
+          return v == null || v.length === 0 || v.every(url => typeof url === 'string' && url.startsWith('http'));
+        },
+        message: 'All image entries must be valid URLs.'
+      },
       default: [],
     },
     bedrooms: {
@@ -63,7 +71,7 @@ const propertySchema = new Schema<PropertyDocument>(
       enum: ['House', 'Apartment', 'Room', 'Unique Stay'],
       required: true,
     },
-    host: { // Denormalized host info
+    host: { 
       name: { type: String, required: true },
       avatarUrl: { type: String },
     },
@@ -81,6 +89,6 @@ const propertySchema = new Schema<PropertyDocument>(
   { timestamps: true }
 );
 
-propertySchema.index({ location: 'text', title: 'text', description: 'text' }); // For text search
+propertySchema.index({ location: 'text', title: 'text', description: 'text' }); 
 
 export default mongoose.models.Property || mongoose.model<PropertyDocument>("Property", propertySchema);
