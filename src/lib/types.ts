@@ -2,7 +2,6 @@ export type UserRole = 'guest' | 'host' | 'admin';
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 
 export interface User {
-  id: string;
   name: string; // Changed from fullName
   email: string;
   passwordHash?: string; // Added - should be handled server-side mostly

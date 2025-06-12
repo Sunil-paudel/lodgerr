@@ -1,35 +1,42 @@
 
-import type { DefaultSession, DefaultUser, User as DefaultAuthUser } from "next-auth";
+import type { DefaultSession, User as DefaultAuthUser } from "next-auth";
 import type { JWT as DefaultJWT } from "next-auth/jwt";
 
 declare module "next-auth" {
-  interface Session extends DefaultSession {
-    user?: {
-      id?: string | null;
-      name?: string | null; // Ensure name is part of session user
-      email?: string | null; // Ensure email is part of session user
-      image?: string | null; // Ensure image is part of session user
-      role?: string | null; // Example: Add role if you use it
-    } & DefaultSession["user"];
+  /**
+   * Represents the user object in your session.
+   * Extends DefaultSession to include `expires`.
+   */
+  interface Session {
+    user: {
+      id: string; // User ID should always be present for an authenticated user
+      name?: string | null;
+      email?: string | null;
+      image?: string | null;
+      role?: string | null;
+    };
+    expires: DefaultSession["expires"]; // From DefaultSession
   }
 
+  /**
+   * Represents the user object returned by the `authorize` callback
+   * or from an OAuth provider.
+   */
   interface User extends DefaultAuthUser {
-    id: string;
+    id: string; // Ensure `id` is part of the User type returned by authorize
     // name, email, image are already part of DefaultAuthUser
-    // but you can override or extend if needed.
-    // The object returned by `authorize` must match this structure.
-    // For example, if authorize returns `avatarUrl`, you'd add it here
-    // and then map it to `image` in the jwt callback.
-    // For simplicity, we ensure `authorize` returns an `image` field.
-    role?: string; // Example
+    role?: string; // Add custom fields like role
   }
 }
 
 declare module "next-auth/jwt" {
+  /**
+   * Represents the JWT token.
+   */
   interface JWT extends DefaultJWT {
     id?: string;
-    picture?: string | null; // NextAuth typically uses 'picture' for image in JWT
-    role?: string; // Example
-    // name and email are typically part of DefaultJWT (sub, name, email)
+    // name, email, sub are typically part of DefaultJWT
+    picture?: string | null; // NextAuth often uses 'picture' for image in JWT
+    role?: string;
   }
 }

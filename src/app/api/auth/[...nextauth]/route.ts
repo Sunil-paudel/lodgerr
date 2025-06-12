@@ -52,29 +52,28 @@ export const authOptions: NextAuthOptions = {
             throw new Error("Invalid password.");
           }
 
-          // Success: Return user data
-          console.log("[Authorize] Login success:", credentials.email);
+          // Success: Return user data matching the `User` interface in next-auth.d.ts
+          console.log("[Authorize] Login success for user:", user._id.toString(), user.email);
           return {
-            id: user._id.toString(),
+            id: user._id.toString(), // Mongoose _id to string
             name: user.name,
             email: user.email,
-            image: user.avatarUrl,
+            image: user.avatarUrl, // This will map to DefaultAuthUser's `image`
             role: user.role,
           };
         } catch (error: any) {
-          console.error("[Authorize] Unexpected error:", error.message);
+          console.error("[Authorize] Unexpected error:", error.message, error.stack);
 
+          // Re-throw specific known errors for NextAuth to handle and potentially display to user
           if (
             [
               "No user found with this email.",
               "Invalid password.",
               "User account is not properly configured for password login.",
               "Please enter both email and password.",
-              "Database connection failed: MongoDB connection failed: querySrv ENOTFOUND _mongodb._tcp.cluster0.dlua3bq.mongodb.net",
-              "Server configuration error: MONGODB_URI is not defined."
-            ].includes(error.message) || error.message.startsWith("Database connection failed:")
+            ].includes(error.message) || error.message.startsWith("Database connection failed:") || error.message.startsWith("Server configuration error:")
           ) {
-            throw error; // Re-throw specific, known errors
+            throw error;
           }
           // For other unexpected errors, throw a generic message
           throw new Error("Authentication failed due to an unexpected server issue. Please try again.");
@@ -91,43 +90,43 @@ export const authOptions: NextAuthOptions = {
   // === Callback Functions ===
   callbacks: {
     // Modify JWT on login or session update
-    async jwt({ token, user, trigger, session }) {
-      try {
-        if (trigger === "update" && session?.user) {
-          token.name = session.user.name;
-          token.email = session.user.email;
-          token.picture = session.user.image;
-          token.role = session.user.role;
-        }
-
-        if (user) { // user object is available on initial sign in
-          token.id = user.id;
-          token.name = user.name;
-          token.email = user.email;
-          token.picture = user.image;
-          token.role = user.role;
-        }
-      } catch (error: any) {
-        console.error("[JWT Callback] Error:", error.message);
-        // Do not throw here, but ensure token is still returned
+    async jwt({ token, user, trigger, session: newSessionData }) { // Renamed `session` to `newSessionData` to avoid conflict
+      // On initial sign in, the `user` object from `authorize` is available
+      if (user) {
+        console.log("[JWT Callback] Initial user object from authorize:", user);
+        token.id = user.id;
+        token.name = user.name;
+        token.email = user.email;
+        token.picture = user.image; // `user.image` from authorize maps to `token.picture`
+        token.role = user.role;
       }
+
+      // Handle session updates (e.g., user updates profile)
+      if (trigger === "update" && newSessionData?.user) {
+        console.log("[JWT Callback] Updating token from session update data:", newSessionData.user);
+        token.name = newSessionData.user.name;
+        token.email = newSessionData.user.email;
+        token.picture = newSessionData.user.image;
+        token.role = newSessionData.user.role;
+      }
+      console.log("[JWT Callback] Token before returning:", token);
       return token;
     },
 
     // Attach token data to session for use on client side
     async session({ session, token }) {
-      try {
-        if (token && session.user) {
-          session.user.id = token.id as string;
-          session.user.name = token.name;
-          session.user.email = token.email;
-          session.user.image = token.picture;
-          session.user.role = token.role as string | null | undefined;
-        }
-      } catch (error: any) {
-        console.error("[Session Callback] Error:", error.message);
-        // Do not throw here, but ensure session is still returned
+      console.log("[Session Callback] Token received:", token);
+      if (token) {
+        // Ensure session.user exists and is structured according to `next-auth.d.ts`
+        session.user = {
+          id: token.id as string,
+          name: token.name,
+          email: token.email,
+          image: token.picture, // Map token.picture (from JWT) to session.user.image
+          role: token.role as string | undefined,
+        };
       }
+      console.log("[Session Callback] Session user before returning:", session.user);
       return session;
     },
   },
@@ -139,7 +138,7 @@ export const authOptions: NextAuthOptions = {
   },
 
   // === Secret for signing JWT ===
-  secret: process.env.NEXTAUTH_SECRET // Removed trailing comma here
+  secret: process.env.NEXTAUTH_SECRET
 };
 
 // Export for Next.js API routes
