@@ -12,9 +12,10 @@ import type { IUser } from "@/models/User"; // Mongoose User model
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, AlertTriangle, ListChecks, Clock } from "lucide-react";
+import { PlusCircle, AlertTriangle, ListChecks, Edit3 } from "lucide-react";
 import mongoose from "mongoose";
-import { PropertyBookingManager } from "./PropertyBookingManager"; // New client component
+import { PropertyBookingManager } from "./PropertyBookingManager"; 
+import { PropertyDeleteButton } from "./PropertyDeleteButton"; // Import the new component
 
 // Extended property type for this page to include bookings
 export interface PropertyWithBookings extends PropertyType {
@@ -141,11 +142,13 @@ export default async function MyPropertiesPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="md:col-span-1">
                     <PropertyCard property={property} />
-                    <div className="mt-3 flex gap-2">
-                        <Button variant="outline" className="w-full border-primary text-primary hover:bg-primary/10" asChild>
-                            <Link href={`/properties/${property.id}/edit`}>Edit</Link>
+                    <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                        <Button variant="outline" className="w-full border-primary text-primary hover:bg-primary/10" asChild size="sm">
+                            <Link href={`/properties/${property.id}/edit`}>
+                                <Edit3 className="mr-2 h-4 w-4" /> Edit
+                            </Link>
                         </Button>
-                        {/* Delete button can be added here later */}
+                        <PropertyDeleteButton propertyId={property.id} propertyTitle={property.title} />
                     </div>
                   </div>
                   <div className="md:col-span-2">
@@ -164,3 +167,4 @@ export default async function MyPropertiesPage() {
     </div>
   );
 }
+

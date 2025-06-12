@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import connectDB from '@/utils/db';
 import PropertyModel from '@/models/Property';
+import BookingModel from '@/models/Booking'; // Import Booking model
 import type { Property as PropertyType, PricePeriod } from '@/lib/types';
 import * as z from 'zod';
 import { startOfDay, isValid as isValidDate } from 'date-fns';
@@ -165,6 +166,68 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         errorMessage = 'A property with some of these unique details might already exist.';
     } else if (error.message) {
         errorMessage = error.message;
+    }
+    return NextResponse.json({ message: errorMessage, errorDetails: error.toString() }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  const { id } = params;
+  const session = await getServerSession(authOptions);
+
+  if (!session || !session.user || !session.user.id) {
+    return NextResponse.json({ message: 'Unauthorized: You must be logged in.' }, { status: 401 });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return NextResponse.json({ message: 'Invalid property ID format.' }, { status: 400 });
+  }
+
+  try {
+    await connectDB();
+    const propertyToDelete = await PropertyModel.findById(id);
+
+    if (!propertyToDelete) {
+      return NextResponse.json({ message: 'Property not found.' }, { status: 404 });
+    }
+
+    const isOwner = propertyToDelete.hostId.toString() === session.user.id;
+    const isAdmin = session.user.role === 'admin';
+
+    if (!isOwner && !isAdmin) {
+      return NextResponse.json({ message: 'Forbidden: You are not authorized to delete this property.' }, { status: 403 });
+    }
+
+    // Check for active or upcoming bookings
+    const nonDeletableStatuses = ['pending_confirmation', 'pending_payment', 'confirmed_by_host'];
+    const activeBookings = await BookingModel.find({
+      listingId: propertyToDelete._id,
+      bookingStatus: { $in: nonDeletableStatuses },
+      // Optionally, filter by endDate >= today for upcoming/active
+      // endDate: { $gte: startOfDay(new Date()) } 
+    });
+
+    if (activeBookings.length > 0) {
+      return NextResponse.json({ 
+        message: 'This property cannot be deleted because it has active or upcoming bookings. Please resolve these bookings first.' 
+      }, { status: 409 }); // 409 Conflict
+    }
+
+    // Proceed with deletion
+    await PropertyModel.findByIdAndDelete(id);
+    // Note: Associated bookings are not deleted here. They will become "orphaned"
+    // but can still be viewed by guests/hosts if listingId is not strictly enforced on booking display.
+    // For a full cleanup, you might also want to handle associated bookings (e.g., mark them as cancelled, notify users).
+
+    return NextResponse.json({ message: 'Property deleted successfully.' }, { status: 200 });
+
+  } catch (error: any) {
+    console.error(`[API /properties/${id} DELETE] Error deleting property:`, error);
+    let errorMessage = 'An unexpected error occurred while deleting the property.';
+    if (error.name === 'MongoNetworkError') {
+      errorMessage = 'Database connection error.';
+    } else if (error.message) {
+      errorMessage = error.message;
     }
     return NextResponse.json({ message: errorMessage, errorDetails: error.toString() }, { status: 500 });
   }
