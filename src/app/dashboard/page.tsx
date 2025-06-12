@@ -8,7 +8,7 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Loader2, UserCog, Mail, Briefcase, Home, Settings, ShieldCheck } from "lucide-react"; 
+import { Loader2, UserCog, Mail, Briefcase, Home, Settings, ShieldCheck, ListChecks } from "lucide-react"; 
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
@@ -130,13 +130,13 @@ export default function DashboardPage() {
                      <Card className="hover:shadow-lg transition-shadow duration-200 ease-in-out">
                         <CardHeader>
                             <CardTitle className="text-xl font-headline flex items-center">
-                              <Home className="mr-2 h-5 w-5 text-accent" /> My Properties
+                              <ListChecks className="mr-2 h-5 w-5 text-accent" /> My Properties
                             </CardTitle>
                             <CardDescription>Manage your listed properties.</CardDescription>
                         </CardHeader>
                         <CardContent>
                             <Button variant="outline" className="w-full border-primary/50 text-primary hover:bg-primary/10 hover:text-primary" asChild>
-                               <Link href="#">View Properties (Coming Soon)</Link>
+                               <Link href="/dashboard/my-properties">View My Properties</Link>
                             </Button>
                         </CardContent>
                     </Card>

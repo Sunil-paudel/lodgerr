@@ -1,20 +1,23 @@
+
 import Image from 'next/image';
-import { getPropertyById } from '@/lib/mock-data';
+import { getPropertyById } from '@/lib/mock-data'; // Still using mock for this page for now
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
-import { MapPin, BedDouble, Bath, Users, Star } from 'lucide-react';
+import { MapPin, BedDouble, Bath, Users, Star, Edit3 } from 'lucide-react';
 import type { Metadata } from 'next';
 import { PropertyAmenityIcon } from '@/components/property/PropertyAmenityIcon';
 import Link from 'next/link';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 
 interface PropertyDetailsPageProps {
   params: { id: string };
 }
 
 export async function generateMetadata({ params }: PropertyDetailsPageProps): Promise<Metadata> {
-  const property = await getPropertyById(params.id);
+  const property = await getPropertyById(params.id); // Using mock data
   if (!property) {
     return {
       title: 'Property Not Found - Lodger',
@@ -27,7 +30,8 @@ export async function generateMetadata({ params }: PropertyDetailsPageProps): Pr
 }
 
 const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
-  const property = await getPropertyById(params.id);
+  const session = await getServerSession(authOptions);
+  const property = await getPropertyById(params.id); // Using mock data
 
   if (!property) {
     return (
@@ -45,6 +49,8 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
     );
   }
 
+  const isOwner = session?.user?.id === property.hostId;
+
   const mainImageHint = property.type === 'House' ? 'house main' : property.type === 'Apartment' ? 'apartment main' : 'accommodation main';
   const detailImageHint = property.type === 'House' ? 'house detail' : property.type === 'Apartment' ? 'apartment detail' : 'accommodation detail';
   const hostAvatarHint = "host avatar";
@@ -53,19 +59,28 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
     <div className="flex flex-col min-h-screen bg-background">
       <Header />
       <main className="flex-grow container mx-auto px-4 py-8 md:py-12">
-        <div className="mb-6">
-            <h1 className="text-3xl md:text-4xl font-bold mb-2 text-primary font-headline">{property.title}</h1>
-            <div className="flex flex-wrap items-center text-muted-foreground text-sm md:text-base">
-                <MapPin size={18} className="mr-2 flex-shrink-0" />
-                <span className="mr-2">{property.address || property.location}</span>
-                {property.rating && (
-                    <>
-                        <span className="mx-1 hidden sm:inline">·</span>
-                        <Star size={18} className="mr-1 text-amber-500 fill-current flex-shrink-0" />
-                        <span>{property.rating.toFixed(1)} ({property.reviewsCount} reviews)</span>
-                    </>
-                )}
+        <div className="flex flex-wrap justify-between items-start mb-6">
+            <div>
+                <h1 className="text-3xl md:text-4xl font-bold mb-2 text-primary font-headline">{property.title}</h1>
+                <div className="flex flex-wrap items-center text-muted-foreground text-sm md:text-base">
+                    <MapPin size={18} className="mr-2 flex-shrink-0" />
+                    <span className="mr-2">{property.address || property.location}</span>
+                    {property.rating && (
+                        <>
+                            <span className="mx-1 hidden sm:inline">·</span>
+                            <Star size={18} className="mr-1 text-amber-500 fill-current flex-shrink-0" />
+                            <span>{property.rating.toFixed(1)} ({property.reviewsCount} reviews)</span>
+                        </>
+                    )}
+                </div>
             </div>
+            {isOwner && (
+              <Button asChild variant="outline" className="mt-4 md:mt-0">
+                <Link href={`/properties/${property.id}/edit`}>
+                  <Edit3 className="mr-2 h-4 w-4" /> Edit Property
+                </Link>
+              </Button>
+            )}
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-4 md:grid-rows-2 gap-2 mb-8 max-h-[550px] overflow-hidden rounded-lg shadow-lg">
@@ -92,7 +107,6 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
                   />
                 </div>
               ))}
-             {/* Fill remaining grid cells if less than 5 images */}
             {Array.from({ length: Math.max(0, 4 - (property.images.length - 1)) }).map((_, i) => (
                 <div key={`placeholder-${i}`} className="bg-muted h-32 md:h-full"></div>
             ))}
@@ -150,7 +164,7 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
               <div className="mb-4 space-y-2">
                 <Label className="text-sm font-medium">Dates</Label>
                  <Calendar
-                    mode="range" // Simplified to range, actual booking logic would handle single date selection if needed
+                    mode="range"
                     numberOfMonths={1}
                     disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
                     className="rounded-md border"
