@@ -35,7 +35,8 @@ interface HomePageProps {
   };
 }
 
-export default function HomePage({ searchParams }: HomePageProps) {
+// Make HomePage an async function
+export default async function HomePage({ searchParams }: HomePageProps) {
   const location = searchParams?.location;
   const checkIn = searchParams?.checkIn;
   const checkOut = searchParams?.checkOut;
