@@ -3,6 +3,7 @@ import User from "@/models/User";
 import connectDB from "@/utils/db";
 import bcrypt from "bcryptjs";
 import { NextResponse, type NextRequest } from "next/server";
+import { sendEmail } from "@/utils/mailer"; // Import the sendEmail utility
 
 export const POST = async (request: NextRequest) => {
   try {
@@ -58,6 +59,42 @@ export const POST = async (request: NextRequest) => {
     
     await newUser.save();
     console.log("[Signup API] User saved successfully:", { _id: newUser._id, email: newUser.email });
+
+    // Send welcome email
+    // Avoid sending emails in a test environment if SMTP isn't set up or if you want to skip them
+    if (process.env.NODE_ENV !== 'test_skip_email') { 
+      const { success: emailSent, error: emailError } = await sendEmail({
+        to: newUser.email,
+        subject: "Welcome to Lodger!",
+        text: `Hi ${newUser.name},\n\nWelcome to Lodger! We're excited to have you join our community.\n\nStart exploring unique stays or list your own property today.\n\nIf you have any questions, feel free to reach out to our support team.\n\nBest regards,\nThe Lodger Team`,
+        // Example HTML content (optional)
+        // html: `
+        //   <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+        //     <h1 style="color: #333;">Welcome to Lodger, ${newUser.name}!</h1>
+        //     <p>We're thrilled to have you join our community.</p>
+        //     <p>With Lodger, you can discover unique places to stay and unforgettable experiences. Whether you're planning your next vacation or looking to share your own space, we've got you covered.</p>
+        //     <p>Here are a few things you can do to get started:</p>
+        //     <ul>
+        //       <li><a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}" style="color: #007bff; text-decoration: none;">Browse Properties</a></li>
+        //       <li><a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}/list-property" style="color: #007bff; text-decoration: none;">List Your Property</a></li>
+        //       <li><a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}/dashboard" style="color: #007bff; text-decoration: none;">Visit Your Dashboard</a></li>
+        //     </ul>
+        //     <p>If you have any questions, don't hesitate to contact our support team.</p>
+        //     <p>Best regards,<br/>The Lodger Team</p>
+        //     <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;"/>
+        //     <p style="font-size: 0.9em; color: #777;">You're receiving this email because you signed up for Lodger.</p>
+        //   </div>
+        // `
+      });
+      if (!emailSent) {
+        console.warn(`[Signup API] Welcome email failed to send to ${newUser.email}. Error: ${emailError}`);
+        // Do not fail the signup process if email sending fails, just log it.
+        // You might want to add more robust error handling or a retry mechanism in a production app.
+      } else {
+        console.log(`[Signup API] Welcome email successfully sent to ${newUser.email}`);
+      }
+    }
+
 
     return NextResponse.json(
       { message: "User created successfully. You can now log in." },
