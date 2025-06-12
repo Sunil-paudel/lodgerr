@@ -22,7 +22,7 @@ import NextImage from 'next/image';
 import type { Property as PropertyType, PricePeriod } from '@/lib/types';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { format, startOfDay } from 'date-fns';
+import { format, startOfDay, isValid as isValidDate } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
 
 const MAX_IMAGES = 5;
@@ -38,7 +38,7 @@ const propertyEditSchema = z.object({
   price: z.coerce.number().positive().min(1).max(100000).optional(),
   pricePeriod: z.enum(["nightly", "weekly", "monthly"] as [PricePeriod, ...PricePeriod[]]).optional(),
   bedrooms: z.coerce.number().min(0).max(20).optional(),
-  bathrooms: z.coerce.number().min(0).max(10).optional(), // Corrected: bathrooms can be 0 for certain property types, but often min 1. Keeping min 0 for flexibility.
+  bathrooms: z.coerce.number().min(0).max(10).optional(),
   maxGuests: z.coerce.number().min(1).max(50).optional(),
   images: z.array(
     z.object({
@@ -46,15 +46,17 @@ const propertyEditSchema = z.object({
     })
   ).min(1, "At least one image is required.").max(MAX_IMAGES, `Maximum ${MAX_IMAGES} images.`).optional(),
   amenities: z.array(z.string()).optional(),
-  availableFrom: z.date().optional().nullable(), // Allow null
-  availableTo: z.date().optional().nullable(),   // Allow null
+  availableFrom: z.date().optional().nullable(),
+  availableTo: z.date().optional().nullable(),
 }).refine(data => {
   if (data.availableFrom && data.availableTo) {
+    // Ensure dates are valid before comparison
+    if (!isValidDate(data.availableFrom) || !isValidDate(data.availableTo)) return false; // Or handle as per your validation needs
     return data.availableTo >= data.availableFrom;
   }
   return true;
 }, {
-  message: "Availability end date cannot be before start date.",
+  message: "Availability end date cannot be before start date, or dates are invalid.",
   path: ["availableTo"],
 });
 
@@ -75,7 +77,7 @@ export default function EditPropertyPage() {
   const { toast } = useToast();
 
   const [propertyData, setPropertyData] = useState<PropertyType | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); // Start true for initial load
   const [formIsSubmitting, setFormIsSubmitting] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
 
@@ -88,10 +90,9 @@ export default function EditPropertyPage() {
   const { control, handleSubmit, formState: { errors }, setValue, reset, watch, trigger } = useForm<PropertyEditFormData>({
     resolver: zodResolver(propertyEditSchema),
     defaultValues: {
-      images: [],
-      pricePeriod: "nightly",
-      availableFrom: undefined, // Will be populated from fetched data
-      availableTo: undefined,   // Will be populated from fetched data
+      images: [], // Initial empty array
+      availableFrom: null,
+      availableTo: null,
     }
   });
 
@@ -100,34 +101,65 @@ export default function EditPropertyPage() {
     name: "images"
   });
 
-
   useEffect(() => {
     if (authStatus === "unauthenticated") {
+      console.log("[EditPropertyPage] User unauthenticated, redirecting to login.");
       router.replace(`/login?callbackUrl=/properties/${propertyId}/edit`);
     }
   }, [authStatus, router, propertyId]);
 
   useEffect(() => {
-    if (propertyId && authStatus === "authenticated" && session?.user?.id) {
-      const fetchProperty = async () => {
-        setIsLoading(true);
-        setPageError(null);
-        try {
-          const response = await fetch(`/api/properties/${propertyId}`);
-          if (!response.ok) {
-            const errorResult = await response.json();
-            throw new Error(errorResult.message || `Failed to fetch property: ${response.statusText}`);
-          }
-          const data: PropertyType = await response.json();
-
-          if (data.hostId !== session.user.id) {
-            setPageError("You are not authorized to edit this property.");
-            setPropertyData(null);
+    const fetchProperty = async () => {
+      console.log("[EditPropertyPage] fetchProperty called. AuthStatus:", authStatus, "PropertyId:", propertyId);
+      if (!propertyId || authStatus !== "authenticated" || !session?.user?.id) {
+        if (authStatus === "authenticated" && !propertyId) {
+            setPageError("Property ID is missing.");
             setIsLoading(false);
-            return;
-          }
+        }
+        // If authStatus is not "authenticated" yet, or session/user.id is missing, wait for auth to resolve or redirect.
+        // setIsLoading(false) might be premature if auth is still loading. Handled by authStatus check in render.
+        return;
+      }
 
-          setPropertyData(data);
+      setIsLoading(true); // Set loading true when fetch begins
+      setPageError(null);
+      setPropertyData(null); // Reset property data before fetch
+
+      try {
+        console.log(`[EditPropertyPage] Fetching property /api/properties/${propertyId}`);
+        const response = await fetch(`/api/properties/${propertyId}`);
+        
+        if (!response.ok) {
+          let errorResult;
+          try {
+            errorResult = await response.json();
+          } catch (e) {
+            errorResult = { message: `API Error ${response.status}: ${response.statusText}. Response not JSON.` };
+          }
+          console.error("[EditPropertyPage] API Error:", errorResult);
+          throw new Error(errorResult.message || `Failed to fetch property: ${response.statusText}`);
+        }
+        
+        const data: PropertyType = await response.json();
+        console.log("[EditPropertyPage] Fetched property data:", data);
+
+        if (!data || typeof data !== 'object') {
+            console.error("[EditPropertyPage] Fetched data is invalid:", data);
+            throw new Error("Received invalid property data from server.");
+        }
+
+
+        if (data.hostId !== session.user.id) {
+          console.warn("[EditPropertyPage] Authorization failed: User is not host.");
+          setPageError("You are not authorized to edit this property. Only the host can make changes.");
+          setPropertyData(null);
+          return; // Return here, finally will set isLoading to false
+        }
+        
+        // Successfully fetched and authorized, now set up the form
+        try {
+          setPropertyData(data); // Set propertyData immediately
+
           const defaultValues: PropertyEditFormData = {
             title: data.title,
             description: data.description,
@@ -139,20 +171,25 @@ export default function EditPropertyPage() {
             bedrooms: data.bedrooms,
             bathrooms: data.bathrooms,
             maxGuests: data.maxGuests,
-            // react-hook-form expects undefined for empty optional dates, or Date objects
-            availableFrom: data.availableFrom ? new Date(data.availableFrom) : undefined,
-            availableTo: data.availableTo ? new Date(data.availableTo) : undefined,
+            availableFrom: data.availableFrom ? new Date(data.availableFrom) : null,
+            availableTo: data.availableTo ? new Date(data.availableTo) : null,
             images: (data.images || []).map(url => ({ url })),
             amenities: data.amenities || []
           };
+          console.log("[EditPropertyPage] Resetting form with defaultValues:", defaultValues);
           reset(defaultValues);
+
           setSelectedAmenities(data.amenities || []);
 
           if (data.availableFrom || data.availableTo) {
-            setAvailabilityDateRange({
-              from: data.availableFrom ? new Date(data.availableFrom) : undefined,
-              to: data.availableTo ? new Date(data.availableTo) : undefined,
-            });
+            const fromDate = data.availableFrom ? new Date(data.availableFrom) : undefined;
+            const toDate = data.availableTo ? new Date(data.availableTo) : undefined;
+            if ((fromDate && isValidDate(fromDate)) || (toDate && isValidDate(toDate))) {
+                 setAvailabilityDateRange({ from: fromDate, to: toDate });
+            } else {
+                console.warn("[EditPropertyPage] Invalid dates from backend for availability range:", data.availableFrom, data.availableTo);
+                setAvailabilityDateRange(undefined);
+            }
           } else {
             setAvailabilityDateRange(undefined);
           }
@@ -164,24 +201,39 @@ export default function EditPropertyPage() {
             isExisting: true,
           }));
           setImageUploadStates(existingImages);
-          replaceImageFormFields((data.images || []).map(url => ({ url })));
+          // `replaceImageFormFields` used to be here, but `reset` should handle the 'images' field correctly.
+          // If `useFieldArray`'s state isn't syncing with `reset`, this might need revisit.
+          // For now, assuming `reset` correctly populates the `images` field array based on `defaultValues`.
 
-        } catch (err: any) {
-          console.error("Error fetching property for edit:", err);
-          setPageError(err.message || "An error occurred while fetching property details.");
-        } finally {
-          setIsLoading(false);
+          console.log("[EditPropertyPage] Form setup complete.");
+
+        } catch (formSetupError: any) {
+            console.error("[EditPropertyPage] Error during form setup with fetched data:", formSetupError);
+            setPageError("Failed to initialize form with property data. " + formSetupError.message);
+            setPropertyData(null); // Ensure data is null if form setup fails
         }
-      };
-      fetchProperty();
-    }
-  }, [propertyId, authStatus, session, reset, replaceImageFormFields]);
+
+      } catch (err: any) {
+        console.error("[EditPropertyPage] Error in fetchProperty:", err);
+        setPageError(err.message || "An error occurred while fetching property details.");
+        setPropertyData(null);
+      } finally {
+        console.log("[EditPropertyPage] fetchProperty finally block. Setting isLoading to false.");
+        setIsLoading(false);
+      }
+    };
+
+    fetchProperty();
+  // Dependencies: `reset` and `replaceImageFormFields` are stable from react-hook-form.
+  // `session` itself might change reference, but `session?.user?.id` is what's critical inside.
+  // Fetch should trigger if propertyId changes or if auth status resolves to authenticated.
+  }, [propertyId, authStatus, session?.user?.id, reset, replaceImageFormFields]); // Added session.user.id for more specific trigger
   
   useEffect(() => {
+    // Syncs calendar range picker to form values
     setValue('availableFrom', availabilityDateRange?.from || null);
     setValue('availableTo', availabilityDateRange?.to || null);
-    // Trigger validation if either is set, or if one is set and the other is not (which could be an error state)
-    if (availabilityDateRange?.from || availabilityDateRange?.to || (availabilityDateRange?.from && !availabilityDateRange?.to) || (!availabilityDateRange?.from && availabilityDateRange?.to) ) {
+    if (availabilityDateRange?.from !== undefined || availabilityDateRange?.to !== undefined) {
         trigger(['availableFrom', 'availableTo']);
     }
   }, [availabilityDateRange, setValue, trigger]);
@@ -198,7 +250,7 @@ export default function EditPropertyPage() {
         description: `You can upload a maximum of ${MAX_IMAGES} images. You have ${currentImageCount} selected/uploaded.`,
         variant: "destructive",
       });
-      setFileInputKey(Date.now()); // Reset file input to allow re-selection if needed
+      setFileInputKey(Date.now()); 
       return;
     }
 
@@ -211,11 +263,11 @@ export default function EditPropertyPage() {
       isExisting: false,
     }));
     setImageUploadStates(prev => [...prev, ...newUploadStates]);
-    setFileInputKey(Date.now()); // Reset file input
+    setFileInputKey(Date.now()); 
 
     for (let i = 0; i < newUploadStates.length; i++) {
       const uploadState = newUploadStates[i];
-      const file = uploadState.file!; // file is asserted as non-null here because it's a new upload
+      const file = uploadState.file!; 
 
       if (file.size > MAX_FILE_SIZE_BYTES) {
         setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, error: `File too large (max ${MAX_FILE_SIZE_MB}MB).` } : s));
@@ -258,6 +310,7 @@ export default function EditPropertyPage() {
 
   const onSubmit: SubmitHandler<PropertyEditFormData> = async (data) => {
     setFormIsSubmitting(true);
+    console.log("[EditPropertyPage] onSubmit data from form:", data);
 
     const finalImageUrlsFromState = imageUploadStates
       .filter(state => state.cloudinaryUrl && !state.error)
@@ -269,18 +322,23 @@ export default function EditPropertyPage() {
         return;
     }
     
-    // Use react-hook-form's 'data' which includes values from setValue for dates
     const changedData: Partial<PropertyEditFormData> = {};
     let hasChanges = false;
 
+    // Compare form data (which includes all fields due to react-hook-form) with original propertyData
     (Object.keys(data) as Array<keyof PropertyEditFormData>).forEach(key => {
         if (key === 'images' || key === 'amenities' || key === 'availableFrom' || key === 'availableTo') return; 
 
         const formValue = data[key];
-        const originalValue = propertyData?.[key as keyof PropertyType];
+        // Ensure propertyData is not null before accessing its properties
+        const originalValue = propertyData ? propertyData[key as keyof PropertyType] : undefined;
         
-        if (formValue !== originalValue && !(formValue === undefined && (originalValue == null || originalValue === ''))) {
-            (changedData as any)[key] = formValue;
+        // Handle cases where formValue might be undefined/null for optional fields
+        const formValueToCompare = formValue === undefined || formValue === null ? null : formValue;
+        const originalValueToCompare = originalValue === undefined || originalValue === null ? null : originalValue;
+
+        if (formValueToCompare !== originalValueToCompare) {
+            (changedData as any)[key] = formValue; // Send the form value, even if it's null/undefined for clearing
             hasChanges = true;
         }
     });
@@ -301,12 +359,11 @@ export default function EditPropertyPage() {
       hasChanges = true;
     }
 
-    // Handle availability dates using form's `data` which reflects `setValue` calls
     const originalAvailableFromTime = propertyData?.availableFrom ? startOfDay(new Date(propertyData.availableFrom)).getTime() : null;
     const formAvailableFromDate = data.availableFrom ? startOfDay(new Date(data.availableFrom)) : null; 
 
     if (formAvailableFromDate?.getTime() !== originalAvailableFromTime) {
-        changedData.availableFrom = formAvailableFromDate; // Send the Date object or null
+        changedData.availableFrom = formAvailableFromDate;
         hasChanges = true;
     }
 
@@ -314,15 +371,15 @@ export default function EditPropertyPage() {
     const formAvailableToDate = data.availableTo ? startOfDay(new Date(data.availableTo)) : null;
 
     if (formAvailableToDate?.getTime() !== originalAvailableToTime) {
-        changedData.availableTo = formAvailableToDate; // Send the Date object or null
+        changedData.availableTo = formAvailableToDate;
         hasChanges = true;
     }
+    
+    console.log("[EditPropertyPage] Changed data for PATCH:", changedData);
 
-    if (!hasChanges && Object.keys(changedData).length === 0) { // Double check if any field was marked as changed
+    if (!hasChanges && Object.keys(changedData).length === 0) {
         toast({ title: "No Changes", description: "No changes were made to the property.", variant: "default" });
         setFormIsSubmitting(false);
-        // Optionally, redirect if no changes, or allow user to stay.
-        // router.push(`/properties/${propertyId}`); 
         return;
     }
 
@@ -335,7 +392,7 @@ export default function EditPropertyPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        console.error("Update failed result:", result);
+        console.error("[EditPropertyPage] Update failed server response:", result);
         throw new Error(result.message || "Failed to update property. Check console for details.");
       }
 
@@ -344,9 +401,9 @@ export default function EditPropertyPage() {
         description: "Your property has been successfully updated.",
       });
       router.push(`/properties/${propertyId}`);
-      router.refresh(); // Important to reflect changes if user navigates back or stays on a page that might show old data
+      router.refresh(); 
     } catch (error: any) {
-      console.error("Update property error:", error);
+      console.error("[EditPropertyPage] Update property error:", error);
       toast({
         title: "Update Failed",
         description: error.message || "An unexpected error occurred.",
@@ -364,7 +421,21 @@ export default function EditPropertyPage() {
   };
 
 
-  if (isLoading) {
+  if (authStatus === "loading") {
+    return (
+      <div className="flex flex-col min-h-screen">
+        <Header />
+        <main className="flex-grow flex items-center justify-center">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="ml-4 text-muted-foreground">Verifying session...</p>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  // isLoading is for property data fetching, after auth is confirmed
+  if (isLoading && authStatus === "authenticated") {
     return (
       <div className="flex flex-col min-h-screen">
         <Header />
@@ -385,27 +456,35 @@ export default function EditPropertyPage() {
             <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
             <h1 className="text-2xl font-semibold text-destructive mb-2">Access Denied or Error</h1>
             <p className="text-muted-foreground mb-6">{pageError}</p>
-            <Button onClick={() => router.push('/')} variant="outline">Go to Homepage</Button>
+            <Button type="button" onClick={() => router.push('/')} variant="outline">Go to Homepage</Button>
         </main>
         <Footer />
       </div>
     );
   }
 
-  if (!propertyData) { // Should be caught by pageError if fetch failed, but as a safeguard
+  // This is a fallback for unexpected state. If all above conditions are false, propertyData should be loaded.
+  if (!propertyData && authStatus === "authenticated" && !isLoading && !pageError) {
+    console.error("[EditPropertyPage] Critical Render Error: propertyData is null, but not loading and no pageError. AuthStatus:", authStatus);
     return (
       <div className="flex flex-col min-h-screen">
         <Header />
-        <main className="flex-grow flex items-center justify-center">
+        <main className="flex-grow flex items-center justify-center text-center">
             <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
-            <h1 className="text-2xl font-semibold text-destructive mb-2">Property Not Found</h1>
-            <p className="text-muted-foreground mb-6">The property details could not be loaded.</p>
-            <Button onClick={() => router.push('/')} variant="outline">Go to Homepage</Button>
+            <h1 className="text-2xl font-semibold text-destructive mb-2">Unexpected Error</h1>
+            <p className="text-muted-foreground mb-6">Could not display property data due to an unexpected issue.</p>
+            <Button type="button" onClick={() => router.push('/')} variant="outline">Go to Homepage</Button>
         </main>
         <Footer />
       </div>
     );
   }
+  
+  // If propertyData is null but we somehow passed other checks (should be caught by above)
+  if (!propertyData) {
+      return null; // Or some other placeholder if really needed, but previous checks should catch this.
+  }
+
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -518,12 +597,13 @@ export default function EditPropertyPage() {
                         <Button
                             id="availability-dates-edit"
                             variant="outline"
+                            type="button"
                             className={`w-full justify-start text-left font-normal ${!(availabilityDateRange?.from) && "text-muted-foreground"}`}
                             disabled={formIsSubmitting}
                         >
                             <CalendarIconLucide className="mr-2 h-4 w-4" />
-                            {availabilityDateRange?.from ? (
-                            availabilityDateRange.to ? (
+                            {availabilityDateRange?.from && isValidDate(availabilityDateRange.from) ? (
+                            availabilityDateRange.to && isValidDate(availabilityDateRange.to) ? (
                                 <>
                                 {format(availabilityDateRange.from, "LLL dd, y")} -{" "}
                                 {format(availabilityDateRange.to, "LLL dd, y")}
@@ -637,13 +717,14 @@ export default function EditPropertyPage() {
                          ? ` (${imageUploadStates.filter(s => s.cloudinaryUrl && !s.error).length}/${MAX_IMAGES} images)`
                          : (imageUploadStates.some(s=>s.isLoading) ? ' (Processing Images...)' : '')}
                     </p>
+                     {errors.images && <p className="text-sm text-destructive mt-1">{typeof errors.images === 'string' ? errors.images : errors.images.message || (errors.images.root && errors.images.root.message) || "Image validation error"}</p>}
                 </div>
 
                 <CardFooter className="p-0 pt-6 flex justify-end space-x-3">
                      <Button variant="outline" type="button" onClick={() => router.back()} disabled={formIsSubmitting}>
                         Cancel
                      </Button>
-                     <Button type="submit" size="lg" className="bg-accent hover:bg-accent/90 text-accent-foreground" disabled={formIsSubmitting || imageUploadStates.some(s => s.isLoading) || imageUploadStates.filter(s => s.cloudinaryUrl && !s.error).length === 0}>
+                     <Button type="submit" size="lg" className="bg-accent hover:bg-accent/90 text-accent-foreground" disabled={formIsSubmitting || imageUploadStates.some(s => s.isLoading) || (imageUploadStates.filter(s => s.cloudinaryUrl && !s.error).length === 0 && !propertyData?.images?.length )}>
                         {(formIsSubmitting || imageUploadStates.some(s => s.isLoading)) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         {formIsSubmitting ? 'Saving Changes...' : (imageUploadStates.some(s => s.isLoading) ? 'Processing Images...' : 'Save Changes')}
                     </Button>
@@ -656,5 +737,3 @@ export default function EditPropertyPage() {
     </div>
   );
 }
-
-    
