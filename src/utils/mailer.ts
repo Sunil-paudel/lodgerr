@@ -13,7 +13,8 @@ const SMTP_HOST = process.env.SMTP_HOST;
 const SMTP_PORT = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587;
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS;
-const EMAIL_FROM = process.env.EMAIL_FROM || '"Lodger App" <noreply@example.com>';
+// Use a developer-centric placeholder if EMAIL_FROM is not set in the environment
+const EMAIL_FROM = process.env.EMAIL_FROM || '"Lodger Dev Team <dev-noreply@example.com>"';
 
 let transporterInstance: Transporter | null = null;
 let mailerConfigError: string | null = null;
@@ -58,7 +59,7 @@ export const sendEmail = async (options: MailOptions): Promise<{success: boolean
 
   try {
     const info = await transporterInstance.sendMail({
-      from: EMAIL_FROM,
+      from: EMAIL_FROM, // This will now use your defined EMAIL_FROM or the dev placeholder
       to: options.to,
       subject: options.subject,
       text: options.text,
