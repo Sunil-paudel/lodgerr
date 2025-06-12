@@ -1,46 +1,48 @@
 
 export type UserRole = 'guest' | 'host' | 'admin';
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
+export type PricePeriod = 'nightly' | 'weekly' | 'monthly';
 
 export interface User {
-  name: string; // Changed from fullName
+  name: string;
   email: string;
-  passwordHash?: string; // Added - should be handled server-side mostly
+  passwordHash?: string;
   role: UserRole;
   stripeAccountId?: string;
   avatarUrl?: string;
   createdAt: Date;
 }
 
-export interface Property { // Corresponds to Listings
+export interface Property {
   id: string;
-  hostId: string; // FK to User.id
+  hostId: string;
   title: string;
   description: string;
-  pricePerNight: number;
+  price: number; // Changed from pricePerNight
+  pricePeriod: PricePeriod; // Added
   location: string;
-  address?: string; // Kept from original, useful detail
-  maxGuests: number; // Changed from numGuests to maxGuests for consistency
+  address?: string;
+  maxGuests: number;
   images: string[];
-  bedrooms: number; // Kept from original
-  bathrooms: number; // Kept from original
-  amenities: string[]; // Kept from original
-  type: 'House' | 'Apartment' | 'Room' | 'Unique Stay'; // Kept from original
-  host: { // Denormalized host info for convenience, primary link is hostId
+  bedrooms: number;
+  bathrooms: number;
+  amenities: string[];
+  type: 'House' | 'Apartment' | 'Room' | 'Unique Stay';
+  host: {
     name: string;
     avatarUrl?: string;
   };
-  rating?: number; // Kept from original, likely an aggregate
-  reviewsCount?: number; // Kept from original, likely an aggregate
-  createdAt: Date; // Added for sorting
+  rating?: number;
+  reviewsCount?: number;
+  createdAt: Date;
   availableFrom?: Date;
   availableTo?: Date;
 }
 
 export interface Booking {
   id: string;
-  listingId: string; // FK to Property.id
-  guestId: string; // FK to User.id
+  listingId: string;
+  guestId: string;
   startDate: Date;
   endDate: Date;
   totalPrice: number;
@@ -50,27 +52,18 @@ export interface Booking {
 
 export interface Review {
   id: string;
-  listingId: string; // FK to Property.id
-  guestId: string; // FK to User.id
-  rating: number; // Individual rating for this review
+  listingId: string;
+  guestId: string;
+  rating: number;
   comment: string;
   createdAt: Date;
 }
 
-// Optional Image model if you decide to have a separate table/entity for images
-// export interface ListingImage {
-//   id: string;
-//   listingId: string; // FK to Property.id
-//   url: string;
-//   description?: string; // Optional alt text or caption
-// }
-
 export interface Payment {
   id: string;
-  bookingId: string; // FK to Booking.id
+  bookingId: string;
   stripePaymentId: string;
   amount: number;
-  status: PaymentStatus | 'succeeded'; // Stripe might use 'succeeded'
+  status: PaymentStatus | 'succeeded';
   createdAt: Date;
 }
-

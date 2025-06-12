@@ -3,17 +3,16 @@ import Image from 'next/image';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
-import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, Home as HomeIcon, ImageIcon, UserCircle } from 'lucide-react';
+import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, Home as HomeIcon, ImageIcon, UserCircle, Calendar as CalendarIconLucide, DollarSign } from 'lucide-react';
 import type { Metadata } from 'next';
 import { PropertyAmenityIcon } from '@/components/property/PropertyAmenityIcon';
 import Link from 'next/link';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import connectDB from '@/utils/db';
-import PropertyModel from '@/models/Property'; 
-import type { Property as PropertyType } from '@/lib/types'; 
+import PropertyModel from '@/models/Property';
+import type { Property as PropertyType } from '@/lib/types';
 import mongoose from 'mongoose';
-import { Label } from '@/components/ui/label'; // Keep Label if used elsewhere, or remove if only for calendar
 import { PropertyBookingCalendar } from '@/components/property/PropertyBookingCalendar';
 
 
@@ -24,26 +23,27 @@ interface PropertyDetailsPageProps {
 async function fetchPropertyById(id: string): Promise<PropertyType | null> {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     console.warn(`[PropertyDetailsPage] Invalid property ID format: ${id}`);
-    return null; 
+    return null;
   }
   await connectDB();
   try {
-    const propertyDoc = await PropertyModel.findById(id).lean(); // Use .lean() for plain JS object
+    const propertyDoc = await PropertyModel.findById(id).lean();
     if (!propertyDoc) {
       console.warn(`[PropertyDetailsPage] Property not found for ID: ${id}`);
       return null;
     }
-    
-    // Manually transform the data to match the PropertyType interface
-    const { _id, __v, hostId, createdAt, updatedAt, ...rest } = propertyDoc as any; 
+
+    const { _id, __v, hostId, createdAt, updatedAt, ...rest } = propertyDoc as any;
 
     return {
       id: _id.toString(),
       hostId: (hostId as mongoose.Types.ObjectId).toString(),
-      images: propertyDoc.images || [], // Ensure images is an array
+      images: propertyDoc.images || [],
+      price: propertyDoc.price, // Added
+      pricePeriod: propertyDoc.pricePeriod, // Added
       createdAt: createdAt instanceof Date ? createdAt : new Date(createdAt),
       updatedAt: updatedAt instanceof Date ? updatedAt : new Date(updatedAt),
-      host: { 
+      host: {
           name: propertyDoc.host?.name || 'Unknown Host',
           avatarUrl: propertyDoc.host?.avatarUrl
       },
@@ -96,6 +96,18 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
   const detailImageHint = property.type === 'House' ? 'house detail' : property.type === 'Apartment' ? 'apartment detail' : 'accommodation detail';
   const hostAvatarHint = "host avatar";
 
+  const getPricePeriodText = (period: PropertyType['pricePeriod']) => {
+    switch (period) {
+      case 'weekly':
+        return '/ week';
+      case 'monthly':
+        return '/ month';
+      case 'nightly':
+      default:
+        return '/ night';
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <Header />
@@ -123,7 +135,7 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
               </Button>
             )}
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-4 md:grid-rows-2 gap-2 mb-8 max-h-[550px] overflow-hidden rounded-lg shadow-lg">
             <div className="relative md:col-span-2 md:row-span-2 h-64 md:h-full">
                  <Image
@@ -148,9 +160,8 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
                   />
                 </div>
               ))}
-            {/* Fill remaining grid cells if less than 5 images total */}
             {Array.from({ length: Math.max(0, 4 - ((property.images || []).length > 0 ? (property.images || []).length - 1 : 0)) }).map((_, i) => (
-                 ((property.images || []).length === 0 && i === 0) ? null : 
+                 ((property.images || []).length === 0 && i === 0) ? null :
                 <div key={`placeholder-${i}`} className="bg-muted h-32 md:h-full flex items-center justify-center">
                     <ImageIcon size={48} className="text-muted-foreground/50" data-ai-hint="placeholder detail" />
                 </div>
@@ -178,7 +189,7 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
                     )}
                 </div>
             </div>
-            
+
             <div className="py-6 border-b border-border">
               <h3 className="text-xl font-semibold mb-3 font-headline">About this place</h3>
               <p className="text-foreground/90 whitespace-pre-line leading-relaxed">{property.description}</p>
@@ -202,8 +213,8 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
           <div className="lg:col-span-1">
             <div className="sticky top-24 p-6 border border-border rounded-lg shadow-xl bg-card">
               <p className="text-2xl font-bold mb-1">
-                ${property.pricePerNight}{' '}
-                <span className="text-base font-normal text-muted-foreground">/ night</span>
+                ${property.price}{' '}
+                <span className="text-base font-normal text-muted-foreground">{getPricePeriodText(property.pricePeriod)}</span>
               </p>
               {property.rating !== undefined && property.rating !== null && (
                 <div className="flex items-center text-sm text-muted-foreground mb-4">
@@ -211,7 +222,7 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
                     <span>{property.rating.toFixed(1)} ({property.reviewsCount || 0} reviews)</span>
                 </div>
               )}
-              
+
               <div className="mb-4">
                 <PropertyBookingCalendar />
               </div>

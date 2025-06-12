@@ -2,8 +2,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter }
- from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
@@ -18,31 +17,32 @@ import * as z from 'zod';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSession } from 'next-auth/react';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, X, Image as ImageIcon, AlertTriangle } from 'lucide-react';
+import { Loader2, X, Image as ImageIcon, AlertTriangle, DollarSign } from 'lucide-react';
 import NextImage from 'next/image';
-import type { Property as PropertyType } from '@/lib/types'; // Client-side Property type
+import type { Property as PropertyType, PricePeriod } from '@/lib/types';
 
 const MAX_IMAGES = 5;
 const MAX_FILE_SIZE_MB = 5;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
-// Zod schema for property editing - can be similar to listing, but all fields optional for PATCH
 const propertyEditSchema = z.object({
   title: z.string().min(5, "Title must be at least 5 characters long.").max(100).optional(),
   description: z.string().min(20, "Description must be at least 20 characters long.").max(5000).optional(),
   type: z.enum(["House", "Apartment", "Room", "Unique Stay"]).optional(),
   location: z.string().min(3).max(100).optional(),
   address: z.string().min(5).max(200).optional(),
-  pricePerNight: z.coerce.number().positive().min(10).max(10000).optional(),
+  price: z.coerce.number().positive().min(1).max(100000).optional(),
+  pricePeriod: z.enum(["nightly", "weekly", "monthly"] as [PricePeriod, ...PricePeriod[]]).optional(),
   bedrooms: z.coerce.number().min(0).max(20).optional(),
-  bathrooms: z.coerce.number().min(0).max(10).optional(), // Allow 0 for rooms/unique
+  bathrooms: z.coerce.number().min(0).max(10).optional(),
   maxGuests: z.coerce.number().min(1).max(50).optional(),
   images: z.array(
     z.object({
-      url: z.string().url("A valid image URL is required.") // Keep this validation for new images
+      url: z.string().url("A valid image URL is required.")
     })
-  ).min(1, "At least one image is required.").max(MAX_IMAGES, `Maximum ${MAX_IMAGES} images.`).optional(), // Optional because user might not change images
+  ).min(1, "At least one image is required.").max(MAX_IMAGES, `Maximum ${MAX_IMAGES} images.`).optional(),
   amenities: z.array(z.string()).optional(),
+  // availableFrom and availableTo could be added here if needed for editing
 });
 
 type PropertyEditFormData = z.infer<typeof propertyEditSchema>;
@@ -60,9 +60,9 @@ export default function EditPropertyPage() {
   const params = useParams();
   const propertyId = params.id as string;
   const { toast } = useToast();
-  
+
   const [propertyData, setPropertyData] = useState<PropertyType | null>(null);
-  const [isLoading, setIsLoading] = useState(true); // For initial data load
+  const [isLoading, setIsLoading] = useState(true);
   const [formIsSubmitting, setFormIsSubmitting] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
 
@@ -74,7 +74,8 @@ export default function EditPropertyPage() {
   const { control, handleSubmit, formState: { errors }, setValue, reset, watch } = useForm<PropertyEditFormData>({
     resolver: zodResolver(propertyEditSchema),
     defaultValues: {
-      images: [], // Default to empty, will be populated from fetched data
+      images: [],
+      pricePeriod: "nightly", // Default for new entries if not set by fetched data
     }
   });
 
@@ -109,31 +110,29 @@ export default function EditPropertyPage() {
             setIsLoading(false);
             return;
           }
-          
+
           setPropertyData(data);
-          reset({ // Pre-fill form with fetched data
+          reset({
             title: data.title,
             description: data.description,
             type: data.type,
             location: data.location,
             address: data.address,
-            pricePerNight: data.pricePerNight,
+            price: data.price,
+            pricePeriod: data.pricePeriod,
             bedrooms: data.bedrooms,
             bathrooms: data.bathrooms,
             maxGuests: data.maxGuests,
-            // Images will be handled by imageUploadStates and useFieldArray
           });
           setSelectedAmenities(data.amenities || []);
-          
-          // Initialize imageUploadStates from existing images
-          const existingImages = data.images.map(url => ({
+
+          const existingImages = (data.images || []).map(url => ({
             cloudinaryUrl: url,
-            previewUrl: url, // For existing images, preview is the same as cloudinary URL
+            previewUrl: url,
             isLoading: false,
             isExisting: true,
           }));
           setImageUploadStates(existingImages);
-          // Sync react-hook-form's image array
           replaceImageFormFields(existingImages.map(img => ({ url: img.cloudinaryUrl! })));
 
         } catch (err: any) {
@@ -189,9 +188,9 @@ export default function EditPropertyPage() {
         const response = await fetch('/api/upload', { method: 'POST', body: formData });
         const result = await response.json();
         if (!response.ok) throw new Error(result.message || 'Upload failed');
-        
+
         setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, cloudinaryUrl: result.imageUrl } : s));
-        appendImageFormField({ url: result.imageUrl }); // Add to RHF array
+        appendImageFormField({ url: result.imageUrl });
       } catch (err: any) {
         setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, error: err.message || 'Upload failed' } : s));
         toast({ title: `Upload Failed for ${file.name}`, description: err.message, variant: "destructive" });
@@ -205,7 +204,6 @@ export default function EditPropertyPage() {
         if (imageStateToRemove.previewUrl && imageStateToRemove.previewUrl.startsWith('blob:')) {
             URL.revokeObjectURL(imageStateToRemove.previewUrl);
         }
-        // Find corresponding RHF field by URL if it was successfully uploaded or existing
         if (imageStateToRemove.cloudinaryUrl) {
             const formFieldIndex = imageFormFields.findIndex(field => field.url === imageStateToRemove.cloudinaryUrl);
             if (formFieldIndex !== -1) {
@@ -221,7 +219,7 @@ export default function EditPropertyPage() {
     setFormIsSubmitting(true);
 
     const finalImageUrls = imageUploadStates
-      .filter(state => state.cloudinaryUrl && !state.error) // Only successfully uploaded or existing non-errored
+      .filter(state => state.cloudinaryUrl && !state.error)
       .map(state => ({ url: state.cloudinaryUrl! }));
 
     if (finalImageUrls.length === 0) {
@@ -230,24 +228,24 @@ export default function EditPropertyPage() {
         return;
     }
 
-    // Construct only the fields that have changed or are part of the schema
     const changedData: Partial<PropertyEditFormData> = {};
     (Object.keys(data) as Array<keyof PropertyEditFormData>).forEach(key => {
-        if (data[key] !== undefined && data[key] !== propertyData?.[key as keyof PropertyType]) { // Check if value changed from original
-           if (key === 'images') return; // Images handled separately
+        if (data[key] !== undefined && data[key] !== propertyData?.[key as keyof PropertyType]) {
+           if (key === 'images') return;
             (changedData as any)[key] = data[key];
         }
     });
-    
-    // Always include images and amenities if they are to be updated
-    changedData.images = finalImageUrls;
-    changedData.amenities = selectedAmenities;
+
+    // Ensure images and amenities are included if they are the only changes or part of changes
+    if (finalImageUrls.map(img=>img.url).join(',') !== (propertyData?.images || []).join(',')) {
+      changedData.images = finalImageUrls;
+    }
+    if (selectedAmenities.join(',') !== (propertyData?.amenities || []).join(',')) {
+      changedData.amenities = selectedAmenities;
+    }
 
 
-    if (Object.keys(changedData).length === 0 && 
-        JSON.stringify(finalImageUrls.map(img => img.url).sort()) === JSON.stringify(propertyData?.images.sort() || []) &&
-        JSON.stringify(selectedAmenities.sort()) === JSON.stringify(propertyData?.amenities.sort() || [])
-    ) {
+    if (Object.keys(changedData).length === 0) {
         toast({ title: "No Changes", description: "No changes were made to the property.", variant: "default" });
         setFormIsSubmitting(false);
         router.push(`/properties/${propertyId}`);
@@ -272,7 +270,7 @@ export default function EditPropertyPage() {
         description: "Your property has been successfully updated.",
       });
       router.push(`/properties/${propertyId}`);
-      router.refresh(); // Refresh to see changes if staying on a related page or for cache invalidation
+      router.refresh();
     } catch (error: any) {
       toast({
         title: "Update Failed",
@@ -283,7 +281,7 @@ export default function EditPropertyPage() {
       setFormIsSubmitting(false);
     }
   };
-  
+
   const handleAmenityChange = (amenity: string) => {
     setSelectedAmenities(prev =>
       prev.includes(amenity) ? prev.filter(item => item !== amenity) : [...prev, amenity]
@@ -319,7 +317,7 @@ export default function EditPropertyPage() {
     );
   }
 
-  if (!propertyData) { // Should be covered by pageError, but as a fallback
+  if (!propertyData) {
     return (
       <div className="flex flex-col min-h-screen">
         <Header />
@@ -375,10 +373,32 @@ export default function EditPropertyPage() {
                         />
                          {errors.type && <p className="text-sm text-destructive">{errors.type.message}</p>}
                     </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="pricePerNight">Price per Night ($)</Label>
-                        <Controller name="pricePerNight" control={control} render={({ field }) => <Input {...field} id="pricePerNight" type="number" placeholder="120" disabled={formIsSubmitting}/> } />
-                        {errors.pricePerNight && <p className="text-sm text-destructive">{errors.pricePerNight.message}</p>}
+                     <div className="space-y-2">
+                       <Label>Price</Label>
+                       <div className="flex gap-2">
+                            <div className="relative flex-grow">
+                                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <Controller name="price" control={control} render={({ field }) => <Input {...field} id="price" type="number" placeholder="120" className="pl-8" disabled={formIsSubmitting} value={field.value ?? ''} onChange={e => field.onChange(parseFloat(e.target.value) || undefined)}/>} />
+                            </div>
+                            <Controller
+                                name="pricePeriod"
+                                control={control}
+                                render={({ field }) => (
+                                    <Select onValueChange={field.onChange} value={field.value} disabled={formIsSubmitting}>
+                                    <SelectTrigger id="pricePeriod" className="w-[150px]">
+                                        <SelectValue placeholder="Select period" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="nightly">Per Night</SelectItem>
+                                        <SelectItem value="weekly">Per Week</SelectItem>
+                                        <SelectItem value="monthly">Per Month</SelectItem>
+                                    </SelectContent>
+                                    </Select>
+                                )}
+                            />
+                       </div>
+                        {errors.price && <p className="text-sm text-destructive">{errors.price.message}</p>}
+                        {errors.pricePeriod && <p className="text-sm text-destructive">{errors.pricePeriod.message}</p>}
                     </div>
                 </div>
 
@@ -396,17 +416,17 @@ export default function EditPropertyPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="space-y-2">
                         <Label htmlFor="bedrooms">Bedrooms</Label>
-                        <Controller name="bedrooms" control={control} render={({ field }) => <Input {...field} id="bedrooms" type="number" disabled={formIsSubmitting}/> } />
+                        <Controller name="bedrooms" control={control} render={({ field }) => <Input {...field} id="bedrooms" type="number" disabled={formIsSubmitting} value={field.value ?? ''} onChange={e => field.onChange(parseInt(e.target.value,10) || 0)}/>} />
                         {errors.bedrooms && <p className="text-sm text-destructive">{errors.bedrooms.message}</p>}
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="bathrooms">Bathrooms</Label>
-                        <Controller name="bathrooms" control={control} render={({ field }) => <Input {...field} id="bathrooms" type="number" disabled={formIsSubmitting}/> } />
+                        <Controller name="bathrooms" control={control} render={({ field }) => <Input {...field} id="bathrooms" type="number" disabled={formIsSubmitting} value={field.value ?? ''} onChange={e => field.onChange(parseInt(e.target.value,10) || 0)}/>} />
                         {errors.bathrooms && <p className="text-sm text-destructive">{errors.bathrooms.message}</p>}
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="maxGuests">Max Guests</Label>
-                        <Controller name="maxGuests" control={control} render={({ field }) => <Input {...field} id="maxGuests" type="number" disabled={formIsSubmitting}/> } />
+                        <Controller name="maxGuests" control={control} render={({ field }) => <Input {...field} id="maxGuests" type="number" disabled={formIsSubmitting} value={field.value ?? ''} onChange={e => field.onChange(parseInt(e.target.value,10) || 1)}/>} />
                         {errors.maxGuests && <p className="text-sm text-destructive">{errors.maxGuests.message}</p>}
                     </div>
                 </div>
@@ -428,14 +448,13 @@ export default function EditPropertyPage() {
                     </div>
                 </div>
 
-                {/* Image Upload Section */}
                 <div className="space-y-4">
                     <div className="space-y-2">
                         <Label htmlFor="images-input" className="flex items-center">
                             <ImageIcon className="mr-2 h-5 w-5 text-muted-foreground" /> Property Images (up to {MAX_IMAGES})
                         </Label>
                         <Input
-                            id="images-input" // Changed ID to avoid conflict with RHF 'images'
+                            id="images-input"
                             key={fileInputKey}
                             type="file"
                             multiple
@@ -446,7 +465,7 @@ export default function EditPropertyPage() {
                         />
                         {errors.images && !imageUploadStates.some(s => s.cloudinaryUrl) && <p className="text-sm text-destructive">{errors.images.message}</p>}
                     </div>
-                    
+
                     {imageUploadStates.length > 0 && (
                         <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                         {imageUploadStates.map((uploadState, index) => (
@@ -491,7 +510,7 @@ export default function EditPropertyPage() {
                     )}
                      <p className="text-xs text-muted-foreground">
                         Accepted formats: PNG, JPG, GIF, WEBP. Max {MAX_FILE_SIZE_MB}MB per image.
-                        {imageUploadStates.filter(s => s.cloudinaryUrl && !s.error).length > 0 
+                        {imageUploadStates.filter(s => s.cloudinaryUrl && !s.error).length > 0
                          ? ` (${imageUploadStates.filter(s => s.cloudinaryUrl && !s.error).length}/${MAX_IMAGES} images)`
                          : (imageUploadStates.some(s=>s.isLoading) ? ' (Processing Images...)' : '')}
                     </p>
@@ -514,5 +533,3 @@ export default function EditPropertyPage() {
     </div>
   );
 }
-
-    

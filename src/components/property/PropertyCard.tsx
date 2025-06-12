@@ -1,3 +1,4 @@
+
 import Image from 'next/image';
 import Link from 'next/link';
 import type { Property } from '@/lib/types';
@@ -9,17 +10,27 @@ interface PropertyCardProps {
 }
 
 const PropertyCard = ({ property }: PropertyCardProps) => {
-  // Determine appropriate AI hint based on property type
-  let aiHint = "building exterior"; // Default hint
+  let aiHint = "building exterior";
   if (property.type === 'House') aiHint = "house exterior";
   else if (property.type === 'Apartment') aiHint = "apartment building";
   else if (property.type === 'Room') aiHint = "house room";
   else if (property.type === 'Unique Stay') aiHint = "unique accommodation";
 
   const imageSrc = property.images && property.images.length > 0 ? property.images[0] : 'https://placehold.co/600x400.png';
-  const imageAlt = property.images && property.images.length > 0 ? property.title : "Placeholder image";
+  const imageAlt = property.images && property.images.length > 0 ? property.title : "Placeholder image for property";
   const finalAiHint = property.images && property.images.length > 0 ? aiHint : "placeholder property";
 
+  const getPricePeriodText = (period: Property['pricePeriod']) => {
+    switch (period) {
+      case 'weekly':
+        return '/ week';
+      case 'monthly':
+        return '/ month';
+      case 'nightly':
+      default:
+        return '/ night';
+    }
+  };
 
   return (
     <Card className="overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col h-full rounded-lg">
@@ -48,17 +59,17 @@ const PropertyCard = ({ property }: PropertyCardProps) => {
           <span className="flex items-center"><Bath className="h-4 w-4 mr-1 flex-shrink-0" /> {property.bathrooms} baths</span>
           <span className="flex items-center"><Users className="h-4 w-4 mr-1 flex-shrink-0" /> {property.maxGuests} guests</span>
         </div>
-        {property.rating && (
+        {property.rating !== undefined && property.rating !== null && (
            <div className="flex items-center text-sm text-amber-500">
              <Star className="h-4 w-4 mr-1 fill-current" />
-             <span>{property.rating.toFixed(1)} ({property.reviewsCount} reviews)</span>
+             <span>{property.rating.toFixed(1)} ({property.reviewsCount || 0} reviews)</span>
            </div>
          )}
       </CardContent>
       <CardFooter className="p-4 border-t">
         <div className="flex justify-between items-center w-full">
           <p className="text-lg font-bold text-primary">
-            ${property.pricePerNight} <span className="text-sm font-normal text-muted-foreground">/ night</span>
+            ${property.price} <span className="text-sm font-normal text-muted-foreground">{getPricePeriodText(property.pricePeriod)}</span>
           </p>
           <Link href={`/properties/${property.id}`} className="text-sm font-medium text-accent hover:text-accent/80">
             View Details

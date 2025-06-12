@@ -4,8 +4,9 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import connectDB from '@/utils/db';
 import Property from '@/models/Property';
-import User from '@/models/User'; 
+import User from '@/models/User';
 import * as z from 'zod';
+import type { PricePeriod } from '@/lib/types';
 
 const propertySubmissionSchema = z.object({
   title: z.string().min(5).max(100),
@@ -13,18 +14,19 @@ const propertySubmissionSchema = z.object({
   type: z.enum(["House", "Apartment", "Room", "Unique Stay"]),
   location: z.string().min(3).max(100),
   address: z.string().min(5).max(200),
-  pricePerNight: z.number().positive().min(10).max(10000),
-  bedrooms: z.number().min(0).max(20),
-  bathrooms: z.number().min(1).max(10),
-  maxGuests: z.number().min(1).max(50),
+  price: z.coerce.number().positive().min(1).max(100000), // Changed from pricePerNight
+  pricePeriod: z.enum(["nightly", "weekly", "monthly"] as [PricePeriod, ...PricePeriod[]]), // Added
+  bedrooms: z.coerce.number().min(0).max(20),
+  bathrooms: z.coerce.number().min(1).max(10),
+  maxGuests: z.coerce.number().min(1).max(50),
   images: z.array(
     z.object({
       url: z.string().url()
     })
   ).min(1, "At least one image is required.").max(5, "Maximum 5 images allowed."),
   amenities: z.array(z.string()).optional(),
-  availableFrom: z.coerce.date().optional(), // Use coerce.date() for string to Date conversion
-  availableTo: z.coerce.date().optional(),   // Use coerce.date() for string to Date conversion
+  availableFrom: z.coerce.date().optional(),
+  availableTo: z.coerce.date().optional(),
 }).refine(data => {
   if (data.availableFrom && data.availableTo) {
     return data.availableTo >= data.availableFrom;
@@ -43,7 +45,7 @@ export async function POST(request: NextRequest) {
     if (!session || !session.user || !session.user.id) {
       return NextResponse.json({ message: 'Unauthorized: You must be logged in to list a property.' }, { status: 401 });
     }
-    
+
     const hostId = session.user.id;
     const hostName = session.user.name || 'Anonymous Host';
     const hostAvatarUrl = session.user.image || undefined;
@@ -62,11 +64,12 @@ export async function POST(request: NextRequest) {
       type,
       location,
       address,
-      pricePerNight,
+      price, // Changed from pricePerNight
+      pricePeriod, // Added
       bedrooms,
       bathrooms,
       maxGuests,
-      images, 
+      images,
       amenities,
       availableFrom,
       availableTo,
@@ -81,11 +84,12 @@ export async function POST(request: NextRequest) {
       type,
       location,
       address,
-      pricePerNight,
+      price, // Changed
+      pricePeriod, // Added
       bedrooms,
       bathrooms,
       maxGuests,
-      images: images.map(img => img.url), 
+      images: images.map(img => img.url),
       amenities: amenities || [],
       host: {
         name: hostName,
@@ -113,4 +117,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: errorMessage, errorDetails: error.toString() }, { status: 500 });
   }
 }
-

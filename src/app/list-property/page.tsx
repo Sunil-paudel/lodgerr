@@ -17,12 +17,13 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, X, Image as ImageIcon, Calendar as CalendarIconLucide } from 'lucide-react'; 
+import { Loader2, X, Image as ImageIcon, Calendar as CalendarIconLucide, DollarSign } from 'lucide-react';
 import NextImage from 'next/image';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { format, startOfDay } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
+import type { PricePeriod } from '@/lib/types';
 
 
 const MAX_IMAGES = 5;
@@ -35,7 +36,8 @@ const propertySchema = z.object({
   type: z.enum(["House", "Apartment", "Room", "Unique Stay"], { required_error: "Property type is required."}),
   location: z.string().min(3, "Location is required.").max(100, "Location cannot exceed 100 characters."),
   address: z.string().min(5, "Full address is required.").max(200, "Address cannot exceed 200 characters."),
-  pricePerNight: z.coerce.number().positive("Price must be a positive number.").min(10, "Price must be at least $10.").max(10000, "Price cannot exceed $10,000."),
+  price: z.coerce.number().positive("Price must be a positive number.").min(1, "Price must be at least $1.").max(100000, "Price seems too high."),
+  pricePeriod: z.enum(["nightly", "weekly", "monthly"], { required_error: "Price period is required."}),
   bedrooms: z.coerce.number().min(0, "Bedrooms cannot be negative.").max(20, "Bedrooms cannot exceed 20."),
   bathrooms: z.coerce.number().min(1, "At least 1 bathroom is required.").max(10, "Bathrooms cannot exceed 10."),
   maxGuests: z.coerce.number().min(1, "At least 1 guest is required.").max(50,"Max guests cannot exceed 50."),
@@ -54,7 +56,7 @@ const propertySchema = z.object({
   return true;
 }, {
   message: "Availability end date cannot be before start date.",
-  path: ["availableTo"], // Path to the field to which the error will be attached
+  path: ["availableTo"],
 });
 
 type PropertyFormData = z.infer<typeof propertySchema>;
@@ -79,6 +81,7 @@ export default function ListPropertyPage() {
     resolver: zodResolver(propertySchema),
     defaultValues: {
       type: "House",
+      pricePeriod: "nightly",
       bedrooms: 1,
       bathrooms: 1,
       maxGuests: 2,
@@ -104,12 +107,12 @@ export default function ListPropertyPage() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, router]);
-  
+
   useEffect(() => {
     setValue('availableFrom', availabilityDateRange?.from);
     setValue('availableTo', availabilityDateRange?.to);
     if (availabilityDateRange?.from && availabilityDateRange?.to) {
-        trigger(['availableFrom', 'availableTo']); // Trigger validation for dependent fields
+        trigger(['availableFrom', 'availableTo']);
     }
   }, [availabilityDateRange, setValue, trigger]);
 
@@ -137,7 +140,7 @@ export default function ListPropertyPage() {
       previewUrl: URL.createObjectURL(file)
     }));
     setImageUploadStates(prev => [...prev, ...newUploadStates]);
-    setFileInputKey(Date.now()); 
+    setFileInputKey(Date.now());
 
     for (let i = 0; i < newUploadStates.length; i++) {
       const uploadState = newUploadStates[i];
@@ -156,7 +159,7 @@ export default function ListPropertyPage() {
           method: 'POST',
           body: formData,
         });
-        
+
         const responseText = await response.text();
         let result;
         try {
@@ -227,7 +230,7 @@ export default function ListPropertyPage() {
 
     const propertyDataToSubmit = {
       ...data,
-      images: finalImageUrls, 
+      images: finalImageUrls,
       amenities: selectedAmenities,
       hostId: session.user.id,
       host: {
@@ -330,10 +333,32 @@ export default function ListPropertyPage() {
                         />
                          {errors.type && <p className="text-sm text-destructive">{errors.type.message}</p>}
                     </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="pricePerNight">Price per Night ($)</Label>
-                        <Input id="pricePerNight" type="number" placeholder="120" {...control.register('pricePerNight')} disabled={formIsLoading}/>
-                        {errors.pricePerNight && <p className="text-sm text-destructive">{errors.pricePerNight.message}</p>}
+                    <div className="space-y-2"> {/* Placeholder for Price inputs */}
+                       <Label>Price</Label>
+                       <div className="flex gap-2">
+                            <div className="relative flex-grow">
+                                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <Input id="price" type="number" placeholder="120" {...control.register('price')} className="pl-8" disabled={formIsLoading}/>
+                            </div>
+                            <Controller
+                                name="pricePeriod"
+                                control={control}
+                                render={({ field }) => (
+                                    <Select onValueChange={field.onChange} defaultValue={field.value as PricePeriod} disabled={formIsLoading}>
+                                    <SelectTrigger id="pricePeriod" className="w-[150px]">
+                                        <SelectValue placeholder="Select period" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="nightly">Per Night</SelectItem>
+                                        <SelectItem value="weekly">Per Week</SelectItem>
+                                        <SelectItem value="monthly">Per Month</SelectItem>
+                                    </SelectContent>
+                                    </Select>
+                                )}
+                            />
+                       </div>
+                        {errors.price && <p className="text-sm text-destructive">{errors.price.message}</p>}
+                        {errors.pricePeriod && <p className="text-sm text-destructive">{errors.pricePeriod.message}</p>}
                     </div>
                 </div>
 
@@ -366,7 +391,6 @@ export default function ListPropertyPage() {
                     </div>
                 </div>
 
-                {/* Availability Date Range Picker */}
                 <div className="space-y-2">
                     <Label htmlFor="availability-dates">Availability Dates</Label>
                     <Popover>
@@ -443,7 +467,7 @@ export default function ListPropertyPage() {
                         />
                         {errors.images && !imageUploadStates.some(s => s.cloudinaryUrl) && <p className="text-sm text-destructive">{errors.images.message}</p>}
                     </div>
-                    
+
                     {imageUploadStates.length > 0 && (
                         <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                         {imageUploadStates.map((uploadState, index) => (
@@ -454,7 +478,7 @@ export default function ListPropertyPage() {
                                         alt={`Preview ${uploadState.file?.name || index}`}
                                         fill
                                         sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 20vw"
-                                        className="object-contain rounded" 
+                                        className="object-contain rounded"
                                     />
                                 )}
                                 {uploadState.isLoading && (
@@ -493,7 +517,7 @@ export default function ListPropertyPage() {
                     )}
                      <p className="text-xs text-muted-foreground">
                         Accepted formats: PNG, JPG, GIF, WEBP. Max {MAX_FILE_SIZE_MB}MB per image.
-                        {imageUploadStates.filter(s => s.cloudinaryUrl).length > 0 
+                        {imageUploadStates.filter(s => s.cloudinaryUrl).length > 0
                          ? ` (${imageUploadStates.filter(s => s.cloudinaryUrl).length}/${MAX_IMAGES} uploaded)`
                          : (imageUploadStates.some(s=>s.isLoading) ? ' (Uploading...)' : ' (No images selected yet)')}
                     </p>
@@ -513,5 +537,3 @@ export default function ListPropertyPage() {
       <Footer />
     </div>
   );
-
-    

@@ -1,16 +1,18 @@
 
 import mongoose, { Schema, Document } from 'mongoose';
-import type { Property as PropertyType } from '@/lib/types';
+import type { Property as PropertyType, PricePeriod } from '@/lib/types';
 
-export interface PropertyDocument extends Omit<PropertyType, 'id' | 'hostId' | 'images' | 'createdAt' | 'host'>, Document {
+export interface PropertyDocument extends Omit<PropertyType, 'id' | 'hostId' | 'images' | 'createdAt' | 'host' | 'pricePerNight'>, Document {
   hostId: mongoose.Types.ObjectId;
   images: string[];
+  price: number; // New field
+  pricePeriod: PricePeriod; // New field
   host: {
     name: string;
     avatarUrl?: string;
   };
-  createdAt: Date; // Ensure createdAt is part of the interface if used by PropertyType and not just from timestamps
-  updatedAt: Date; // Mongoose adds this with timestamps
+  createdAt: Date;
+  updatedAt: Date;
   availableFrom?: Date;
   availableTo?: Date;
 }
@@ -31,10 +33,16 @@ const propertySchema = new Schema<PropertyDocument>(
       type: String,
       required: true,
     },
-    pricePerNight: {
+    price: { // Changed from pricePerNight
       type: Number,
       required: true,
       min: 0,
+    },
+    pricePeriod: { // Added
+      type: String,
+      enum: ['nightly', 'weekly', 'monthly'] as PricePeriod[],
+      required: true,
+      default: 'nightly',
     },
     location: {
       type: String,
@@ -102,20 +110,20 @@ const propertySchema = new Schema<PropertyDocument>(
       required: false,
     },
   },
-  { 
+  {
     timestamps: true,
     toJSON: {
-      virtuals: true, // ensure virtuals are included
+      virtuals: true,
       transform: function (doc, ret) {
-        ret.id = ret._id.toString(); // map _id to id
+        ret.id = ret._id.toString();
         delete ret._id;
-        delete ret.__v; // remove __v
+        delete ret.__v;
         if (ret.hostId instanceof mongoose.Types.ObjectId) {
           ret.hostId = ret.hostId.toString();
         }
       }
     },
-    toObject: { // Also apply transform for toObject if needed elsewhere
+    toObject: {
       virtuals: true,
       transform: function (doc, ret) {
         ret.id = ret._id.toString();
@@ -135,4 +143,3 @@ propertySchema.index({ createdAt: -1 });
 
 
 export default mongoose.models.Property || mongoose.model<PropertyDocument>("Property", propertySchema);
-
