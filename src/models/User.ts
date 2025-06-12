@@ -1,8 +1,8 @@
-import mongoose, { Schema, Document, models, model } from "mongoose";
 
+import mongoose, { Schema, Document } from "mongoose";
 
+// Define the user interface extending Mongoose's Document
 export interface IUser extends Document {
- 
   name: string;
   email: string;
   passwordHash?: string;
@@ -12,10 +12,10 @@ export interface IUser extends Document {
   createdAt: Date;
 }
 
+// Define the user schema
 const userSchema = new Schema<IUser>(
   {
-    id: { type: Number, unique: true }, 
-    name: { type: String, required: true, unique: true },
+    name: { type: String, required: true }, // Removed unique: true
     email: { type: String, required: true, unique: true },
     passwordHash: { type: String },
     role: { type: String, enum: ["guest", "host", "admin"], default: "guest" },
@@ -25,6 +25,6 @@ const userSchema = new Schema<IUser>(
   { timestamps: true }
 );
 
+// Use mongoose.model and mongoose.models to avoid model overwrite issues
+export default mongoose.models.User || mongoose.model<IUser>("User", userSchema);
 
-
-export default models.User || model<IUser>("User", userSchema);
