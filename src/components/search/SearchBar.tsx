@@ -1,6 +1,8 @@
+
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation'; // Import useRouter
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -11,6 +13,7 @@ import type { DateRange } from 'react-day-picker';
 import { getSuggestedLocations } from '@/lib/mock-data';
 
 const SearchBar = () => {
+  const router = useRouter(); // Initialize useRouter
   const [location, setLocation] = useState('');
   const [locationSuggestions, setLocationSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -64,12 +67,20 @@ const SearchBar = () => {
   };
   
   const handleSearch = () => {
-    console.log('Searching for:', {
-      location,
-      checkIn: dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : undefined,
-      checkOut: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : undefined,
-      guests: 1, 
-    });
+    const queryParams = new URLSearchParams();
+    if (location) {
+      queryParams.set('location', location);
+    }
+    if (dateRange?.from) {
+      queryParams.set('checkIn', format(dateRange.from, 'yyyy-MM-dd'));
+    }
+    if (dateRange?.to) {
+      queryParams.set('checkOut', format(dateRange.to, 'yyyy-MM-dd'));
+    }
+    // We don't have guests input yet, so we'll omit it for now.
+    // queryParams.set('guests', '1'); 
+
+    router.push(`/?${queryParams.toString()}`);
   };
 
   return (
@@ -98,7 +109,7 @@ const SearchBar = () => {
                 <li
                   key={index}
                   className="px-4 py-2 hover:bg-accent hover:text-accent-foreground cursor-pointer"
-                  onMouseDown={() => handleSuggestionClick(suggestion)}
+                  onMouseDown={() => handleSuggestionClick(suggestion)} // Use onMouseDown to trigger before onBlur
                 >
                   {suggestion}
                 </li>
@@ -138,7 +149,7 @@ const SearchBar = () => {
                 selected={dateRange}
                 onSelect={setDateRange}
                 numberOfMonths={2}
-                disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
+                disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))} // Disable past dates
               />
             </PopoverContent>
           </Popover>

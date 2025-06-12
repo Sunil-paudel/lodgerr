@@ -1,10 +1,10 @@
+
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import SearchBar from '@/components/search/SearchBar';
 import PropertyList from '@/components/property/PropertyList';
 import { Suspense } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
-
 
 const PropertyListSkeleton = () => (
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -26,8 +26,21 @@ const PropertyListSkeleton = () => (
   </div>
 );
 
+interface HomePageProps {
+  searchParams?: {
+    location?: string;
+    checkIn?: string;
+    checkOut?: string;
+    // guests?: string; // Add other params as needed
+  };
+}
 
-export default function HomePage() {
+export default function HomePage({ searchParams }: HomePageProps) {
+  const location = searchParams?.location;
+  const checkIn = searchParams?.checkIn;
+  const checkOut = searchParams?.checkOut;
+  // const guests = searchParams?.guests;
+
   return (
     <div className="flex flex-col min-h-screen">
       <Header />
@@ -40,9 +53,15 @@ export default function HomePage() {
             Discover unique homes and experiences. Unforgettable trips start with Lodger.
             </p>
         </div>
-        <SearchBar />
+        <SearchBar /> {/* SearchBar will set URL query params */}
         <Suspense fallback={<PropertyListSkeleton />}>
-          <PropertyList />
+          {/* Pass search params to PropertyList */}
+          <PropertyList 
+            searchLocation={location}
+            searchCheckIn={checkIn}
+            searchCheckOut={checkOut}
+            // searchGuests={guests}
+          />
         </Suspense>
        
       </main>
