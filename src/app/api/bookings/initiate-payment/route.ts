@@ -33,9 +33,15 @@ const initiatePaymentSchema = z.object({
 
 // **WARNING: Hardcoded App URL for testing. Revert to process.env for deployment!**
 const APP_URL = "https://6000-firebase-studio-1749627677554.cluster-sumfw3zmzzhzkx4mpvz3ogth4y.cloudworkstations.dev";
+// const APP_URL = process.env.NEXT_PUBLIC_APP_URL;
 
 export async function POST(request: NextRequest) {
   try {
+    // if (!APP_URL) {
+    //   console.error("[API /bookings/initiate-payment POST] Error: NEXT_PUBLIC_APP_URL is not set in environment variables.");
+    //   return NextResponse.json({ message: 'Application URL is not configured. Cannot create Stripe session.' }, { status: 500 });
+    // }
+
     const session = await getServerSession(authOptions);
     if (!session || !session.user || !session.user.id) {
       return NextResponse.json({ message: 'Unauthorized: You must be logged in.' }, { status: 401 });
@@ -76,12 +82,13 @@ export async function POST(request: NextRequest) {
     // Advanced conflict detection: Check against existing confirmed/pending bookings
     const conflictingBooking = await Booking.findOne({
       listingId: propertyId,
-      bookingStatus: { $in: ['confirmed_by_host', 'pending_confirmation'] }, 
+      bookingStatus: { $in: ['confirmed_by_host', 'pending_confirmation', 'pending_payment'] }, 
       startDate: { $lt: normalizedEndDate },
       endDate: { $gt: normalizedStartDate },
     });
 
     if (conflictingBooking) {
+      console.log("[API /bookings/initiate-payment POST] Conflict found with booking:", conflictingBooking._id.toString(), "Status:", conflictingBooking.bookingStatus);
       return NextResponse.json({ message: 'These dates are no longer available for this property. Please choose different dates.' }, { status: 409 }); 
     }
 
@@ -111,16 +118,11 @@ export async function POST(request: NextRequest) {
       bookingStatus: 'pending_payment', 
     });
     await newBooking.save();
-
-    const appUrl = APP_URL; // Using hardcoded value for now
-    // For a proper setup, use:
-    // const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-    // if (!appUrl) {
-    //   console.error("[API /bookings/initiate-payment POST] Error: NEXT_PUBLIC_APP_URL is not set in environment variables.");
-    //   return NextResponse.json({ message: 'Application URL is not configured. Cannot create Stripe session.' }, { status: 500 });
-    // }
+    console.log("[API /bookings/initiate-payment POST] New pending_payment booking created:", newBooking._id.toString());
 
 
+    const appUrl = APP_URL; // Using hardcoded value for now or process.env
+    
     const stripeSession = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [
@@ -129,7 +131,7 @@ export async function POST(request: NextRequest) {
             currency: 'usd', 
             product_data: {
               name: `${property.title} (Booking: ${newBooking._id.toString()})`,
-              description: `Stay from ${format(normalizedStartDate, 'MMM dd, yyyy')} to ${format(normalizedEndDate, 'MMM dd, yyyy')}`,
+              description: `Stay from ${format(normalizedStartDate, 'MMM dd, yyyy')} to ${format(normalizedEndDate, 'MMM dd, yyyy')}. Property ID: ${propertyId}`,
               images: property.images && property.images.length > 0 ? [property.images[0]] : undefined,
             },
             unit_amount: Math.round(totalPrice * 100), 
@@ -150,10 +152,13 @@ export async function POST(request: NextRequest) {
     });
 
     if (!stripeSession.id) {
+        // If Stripe session creation fails, we should ideally delete the 'pending_payment' booking
+        // or mark it as failed to prevent orphaned bookings.
+        console.warn("[API /bookings/initiate-payment POST] Stripe session creation failed. Deleting temporary booking:", newBooking._id.toString());
         await Booking.findByIdAndDelete(newBooking._id); 
         return NextResponse.json({ message: 'Failed to initiate payment session with provider.' }, { status: 500 });
     }
-
+    console.log("[API /bookings/initiate-payment POST] Stripe session created:", stripeSession.id, "for booking:", newBooking._id.toString());
     return NextResponse.json({ sessionId: stripeSession.id }, { status: 200 });
 
   } catch (error: any) {
@@ -167,3 +172,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: errorMessage, errorDetails: error.toString() }, { status: 500 });
   }
 }
+
