@@ -1,81 +1,99 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { cloudinaryInstance, cloudinaryConfigError } from '@/lib/cloudinary';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { Readable } from 'stream';
+
+// Helper function to convert NextRequest stream to Node.js Readable stream
+async function requestToStream(request: NextRequest) {
+  const reader = request.body?.getReader();
+  if (!reader) {
+    throw new Error('Failed to get reader from request body');
+  }
+
+  return new Readable({
+    async read() {
+      const { done, value } = await reader.read();
+      if (done) {
+        this.push(null); // Signal end of stream
+      } else {
+        this.push(value);
+      }
+    },
+  });
+}
+
 
 export async function POST(request: NextRequest) {
-  console.log('[API /api/upload] Received POST request');
-
-  if (cloudinaryConfigError || !cloudinaryInstance) {
-    const errorMsg = cloudinaryConfigError || 'Cloudinary service is not initialized on the server.';
-    console.error(`[API /api/upload] Aborting: Cloudinary not configured. Error: ${errorMsg}`);
-    return NextResponse.json({ message: 'Image upload service is not configured correctly on the server.', error: errorMsg }, { status: 503 }); // 503 Service Unavailable
+  if (cloudinaryConfigError) {
+    console.error('[API Upload] Cloudinary config error:', cloudinaryConfigError);
+    return NextResponse.json({ message: "Image upload service is not configured correctly.", error: cloudinaryConfigError }, { status: 503 });
   }
 
-  const session = await getServerSession(authOptions);
-
-  if (!session || !session.user) {
-    console.log('[API /api/upload] Unauthorized access attempt.');
-    return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+  if (!cloudinaryInstance) {
+    console.error('[API Upload] Cloudinary instance not available.');
+    return NextResponse.json({ message: "Image upload service is unavailable.", error: "Cloudinary instance not initialized." }, { status: 503 });
   }
-  console.log('[API /api/upload] User authenticated:', session.user.email);
-
-  const formData = await request.formData();
-  const file = formData.get('file') as File | null;
-
-  if (!file) {
-    console.log('[API /api/upload] No file provided in formData.');
-    return NextResponse.json({ message: 'No file provided.' }, { status: 400 });
-  }
-  console.log(`[API /api/upload] File received: ${file.name}, type: ${file.type}, size: ${file.size}`);
-
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-  console.log('[API /api/upload] File converted to buffer.');
 
   try {
-    console.log('[API /api/upload] Attempting to upload to Cloudinary...');
-    const uploadResult = await new Promise<{ secure_url: string; public_id: string } | undefined>((resolve, reject) => {
-      const stream = cloudinaryInstance.uploader.upload_stream( // Use cloudinaryInstance
-        {
-          resource_type: 'image',
-          folder: 'lodger_properties',
-        },
+    const formData = await request.formData();
+    const file = formData.get('file') as File | null;
+
+    if (!file) {
+      return NextResponse.json({ message: 'No file provided.' }, { status: 400 });
+    }
+
+    if (file.size === 0) {
+      return NextResponse.json({ message: 'Cannot upload an empty file.'}, { status: 400 });
+    }
+    
+    // Convert File to buffer
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+
+    // Use a Promise to handle the stream upload
+    const uploadResponse = await new Promise<{ secure_url?: string; public_id?: string; error?: any }>((resolve, reject) => {
+      const uploadStream = cloudinaryInstance!.uploader.upload_stream(
+        { resource_type: 'image' }, // You can add more options like folder, tags, etc.
         (error, result) => {
           if (error) {
-            console.error('[API /api/upload] Cloudinary Upload Stream Error:', error);
-            reject(error); // This rejection should be caught by the outer try...catch
-          } else {
-            console.log('[API /api/upload] Cloudinary Upload Stream Success Result:', result);
-            resolve(result as { secure_url: string; public_id: string } | undefined);
+            console.error('[API Upload] Cloudinary upload error:', error);
+            return reject({ error });
           }
+          if (!result) {
+            console.error('[API Upload] Cloudinary returned no result.');
+            return reject({ error: new Error('Cloudinary returned no result after upload.') });
+          }
+          return resolve({ secure_url: result.secure_url, public_id: result.public_id });
         }
       );
-      stream.end(buffer);
+      
+      // Create a new Readable stream from the buffer and pipe it
+      Readable.from(buffer).pipe(uploadStream);
     });
 
-    if (uploadResult?.secure_url) {
-      console.log('[API /api/upload] Image uploaded successfully. URL:', uploadResult.secure_url);
-      return NextResponse.json({
-        message: 'Image uploaded successfully',
-        imageUrl: uploadResult.secure_url,
-        publicId: uploadResult.public_id,
-      }, { status: 200 });
-    } else {
-      console.error('[API /api/upload] Cloudinary upload failed to return a secure URL. Full result:', uploadResult);
-      // This case might happen if Cloudinary returns a 200 OK but the result format is unexpected
-      throw new Error('Cloudinary upload succeeded but response was malformed or lacked secure_url.');
+    if (uploadResponse.error || !uploadResponse.secure_url) {
+      const errorMessage = uploadResponse.error?.message || 'Unknown Cloudinary upload error.';
+      return NextResponse.json({ message: 'Failed to upload image.', error: errorMessage }, { status: 500 });
     }
+    
+    console.log('[API Upload] File uploaded successfully to Cloudinary:', uploadResponse.secure_url);
+    return NextResponse.json({ 
+      message: 'File uploaded successfully', 
+      imageUrl: uploadResponse.secure_url,
+      publicId: uploadResponse.public_id 
+    }, { status: 200 });
 
   } catch (error: any) {
-    console.error('[API /api/upload] Overall Upload API Error (after buffer conversion):', error);
-    let errorMessage = 'Image upload failed due to a server error.';
-    if (error.message) {
+    console.error('[API Upload] Error processing upload request:', error);
+    let errorMessage = 'An unexpected error occurred during file upload.';
+     if (error.message) {
         errorMessage = error.message;
-    } else if (typeof error === 'object' && error.http_code) {
-        errorMessage = `Cloudinary error: ${error.http_code} - ${error.message}`;
     }
-    return NextResponse.json({ message: 'Image upload failed.', error: errorMessage }, { status: 500 });
+    // Check for specific error types if needed, e.g., body parsing errors
+    if (error.type === 'entity.too.large') { // Example, check actual error types from Next.js/Node
+        errorMessage = 'File size exceeds server limit.';
+        return NextResponse.json({ message: errorMessage, error: 'FileTooLarge' }, { status: 413 }); // Payload Too Large
+    }
+    return NextResponse.json({ message: 'Upload failed due to a server error.', error: errorMessage }, { status: 500 });
   }
 }
