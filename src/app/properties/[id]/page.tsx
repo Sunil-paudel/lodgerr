@@ -4,7 +4,7 @@ import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar'; // Keep for UI, functionality later
-import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle } from 'lucide-react';
+import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, UserCircle } from 'lucide-react';
 import type { Metadata } from 'next';
 import { PropertyAmenityIcon } from '@/components/property/PropertyAmenityIcon';
 import Link from 'next/link';
@@ -153,7 +153,7 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
             {Array.from({ length: Math.max(0, 4 - (property.images.length > 0 ? property.images.length - 1 : 0)) }).map((_, i) => (
                  (property.images.length === 0 && i === 0) ? null : // if no images, don't add placeholder for main image slot
                 <div key={`placeholder-${i}`} className="bg-muted h-32 md:h-full flex items-center justify-center">
-                    <Image size={48} className="text-muted-foreground/50" data-ai-hint="placeholder" />
+                    <ImageIcon size={48} className="text-muted-foreground/50" data-ai-hint="placeholder" />
                 </div>
             ))}
         </div>
@@ -236,5 +236,10 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
 };
 
 export default PropertyDetailsPage;
+
+// Added ImageIcon for placeholder, it was missing
+import { Image as ImageIcon } from 'lucide-react'; // This line was missing from original code
+// Corrected import for Label
+import { Label } from '@/components/ui/label';
 
     
