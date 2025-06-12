@@ -6,6 +6,15 @@ import bcrypt from "bcryptjs";
 import connectDB from "@/utils/db";         // MongoDB connection utility
 import User from "@/models/User";           // Mongoose User model
 
+// Check for NEXTAUTH_SECRET at module load time
+if (!process.env.NEXTAUTH_SECRET) {
+  console.warn(
+    "\x1b[33m%s\x1b[0m", // Yellow text
+    "[NextAuth Warning] NEXTAUTH_SECRET environment variable is not set! " +
+    "Authentication will not work reliably. Please ensure it is set in your environment."
+  );
+}
+
 export const authOptions: NextAuthOptions = {
   // === Authentication Providers ===
   providers: [
@@ -91,43 +100,57 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     // Modify JWT on login or session update
     async jwt({ token, user, trigger, session: newSessionData }) { // Renamed `session` to `newSessionData` to avoid conflict
-      // On initial sign in, the `user` object from `authorize` is available
-      if (user) {
-        console.log("[JWT Callback] Initial user object from authorize:", user);
-        token.id = user.id;
-        token.name = user.name;
-        token.email = user.email;
-        token.picture = user.image; // `user.image` from authorize maps to `token.picture`
-        token.role = user.role;
-      }
+      try {
+        // On initial sign in, the `user` object from `authorize` is available
+        if (user) {
+          console.log("[JWT Callback] Initial user object from authorize:", user);
+          token.id = user.id;
+          token.name = user.name;
+          token.email = user.email;
+          token.picture = user.image; // `user.image` from authorize maps to `token.picture`
+          token.role = user.role;
+        }
 
-      // Handle session updates (e.g., user updates profile)
-      if (trigger === "update" && newSessionData?.user) {
-        console.log("[JWT Callback] Updating token from session update data:", newSessionData.user);
-        token.name = newSessionData.user.name;
-        token.email = newSessionData.user.email;
-        token.picture = newSessionData.user.image;
-        token.role = newSessionData.user.role;
+        // Handle session updates (e.g., user updates profile)
+        if (trigger === "update" && newSessionData?.user) {
+          console.log("[JWT Callback] Updating token from session update data:", newSessionData.user);
+          token.name = newSessionData.user.name;
+          token.email = newSessionData.user.email;
+          token.picture = newSessionData.user.image;
+          token.role = newSessionData.user.role;
+        }
+        console.log("[JWT Callback] Token before returning:", token);
+        return token;
+      } catch (error: any) {
+        console.error("[JWT Callback] Error in JWT callback:", error.message, error.stack);
+        // Return existing token or throw to signify critical failure.
+        // Returning existing token might lead to inconsistent state if update failed.
+        // For now, returning token to prevent complete session breakage if possible.
+        return token;
       }
-      console.log("[JWT Callback] Token before returning:", token);
-      return token;
     },
 
     // Attach token data to session for use on client side
     async session({ session, token }) {
-      console.log("[Session Callback] Token received:", token);
-      if (token) {
-        // Ensure session.user exists and is structured according to `next-auth.d.ts`
-        session.user = {
-          id: token.id as string,
-          name: token.name,
-          email: token.email,
-          image: token.picture, // Map token.picture (from JWT) to session.user.image
-          role: token.role as string | undefined,
-        };
+      try {
+        console.log("[Session Callback] Token received:", token);
+        if (token) {
+          // Ensure session.user exists and is structured according to `next-auth.d.ts`
+          session.user = {
+            id: token.id as string,
+            name: token.name,
+            email: token.email,
+            image: token.picture, // Map token.picture (from JWT) to session.user.image
+            role: token.role as string | undefined,
+          };
+        }
+        console.log("[Session Callback] Session user before returning:", session.user);
+        return session;
+      } catch (error: any) {
+        console.error("[Session Callback] Error in session callback:", error.message, error.stack);
+        // Return existing session to prevent complete breakage if possible.
+        return session;
       }
-      console.log("[Session Callback] Session user before returning:", session.user);
-      return session;
     },
   },
 
