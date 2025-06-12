@@ -2,22 +2,22 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import type { Property as PropertyType, PricePeriod, BookingStatus, BookedDateRange } from '@/lib/types';
 
-const bookedDateRangeSchema = new Schema<BookedDateRange & {_id: false} >({ // Ensure _id is not created for subdocs unless explicitly needed
+const bookedDateRangeSchema = new Schema<BookedDateRange & {_id: false} >({ 
   bookingId: { type: Schema.Types.ObjectId, ref: 'Booking', required: true },
   startDate: { type: Date, required: true },
   endDate: { type: Date, required: true },
-  status: { 
-    type: String, 
+  status: {
+    type: String,
     enum: ['pending_confirmation', 'pending_payment', 'confirmed_by_host', 'rejected_by_host', 'cancelled_by_guest', 'completed', 'no_show'] as BookingStatus[],
-    required: true 
+    required: true
   },
 }, { _id: false });
 
 export interface PropertyDocument extends Omit<PropertyType, 'id' | 'hostId' | 'images' | 'createdAt' | 'host' | 'bookedDateRanges'>, Document {
   hostId: mongoose.Types.ObjectId;
   images: string[];
-  price: number; 
-  pricePeriod: PricePeriod; 
+  price: number;
+  pricePeriod: PricePeriod;
   host: {
     name: string;
     avatarUrl?: string;
@@ -26,7 +26,7 @@ export interface PropertyDocument extends Omit<PropertyType, 'id' | 'hostId' | '
   updatedAt: Date;
   availableFrom?: Date;
   availableTo?: Date;
-  bookedDateRanges: mongoose.Types.DocumentArray<BookedDateRange & Document>; // Use DocumentArray for subdocuments
+  bookedDateRanges: mongoose.Types.DocumentArray<BookedDateRange & Document>; 
 }
 
 const propertySchema = new Schema<PropertyDocument>(
@@ -45,12 +45,12 @@ const propertySchema = new Schema<PropertyDocument>(
       type: String,
       required: true,
     },
-    price: { 
+    price: {
       type: Number,
       required: true,
       min: 0,
     },
-    pricePeriod: { 
+    pricePeriod: {
       type: String,
       enum: ['nightly', 'weekly', 'monthly'] as PricePeriod[],
       required: true,
@@ -121,7 +121,7 @@ const propertySchema = new Schema<PropertyDocument>(
       type: Date,
       required: false,
     },
-    bookedDateRanges: { 
+    bookedDateRanges: {
       type: [bookedDateRangeSchema],
       default: [],
     }
@@ -139,16 +139,15 @@ const propertySchema = new Schema<PropertyDocument>(
         }
         if (ret.bookedDateRanges) {
           ret.bookedDateRanges = ret.bookedDateRanges.map((range: any) => ({
-            ...range, // spread the plain object part of the subdocument
-            bookingId: range.bookingId?.toString() || range.bookingId, // ensure bookingId is stringified
-            startDate: range.startDate, // ensure dates are passed through
+            bookingId: range.bookingId?.toString() || range.bookingId,
+            startDate: range.startDate, 
             endDate: range.endDate,
             status: range.status,
           }));
         }
       }
     },
-    toObject: { 
+    toObject: {
       virtuals: true,
       transform: function (doc, ret) {
         ret.id = ret._id.toString();
@@ -158,10 +157,15 @@ const propertySchema = new Schema<PropertyDocument>(
           ret.hostId = ret.hostId.toString();
         }
         if (ret.bookedDateRanges) {
-          ret.bookedDateRanges = ret.bookedDateRanges.map((range: any) => ({
-            ...(range.toObject ? range.toObject() : range), // if it's a mongoose subdoc, call toObject()
-            bookingId: range.bookingId?.toString() || range.bookingId,
-          }));
+          ret.bookedDateRanges = ret.bookedDateRanges.map((range: any) => {
+            const rangeObj = range.toObject ? range.toObject() : range; // Ensure plain object
+            return {
+              bookingId: rangeObj.bookingId?.toString() || rangeObj.bookingId,
+              startDate: rangeObj.startDate,
+              endDate: rangeObj.endDate,
+              status: rangeObj.status,
+            };
+          });
         }
       }
     }

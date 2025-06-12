@@ -8,10 +8,10 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import connectDB from '@/utils/db';
 import Booking from '@/models/Booking';
 import PropertyModel, { type PropertyDocument } from '@/models/Property';
-import UserModel, { type IUser } from '@/models/User'; 
+import UserModel, { type IUser } from '@/models/User';
 import * as z from 'zod';
 import { differenceInCalendarDays, startOfDay, format } from 'date-fns';
-import { sendEmail } from '@/utils/mailer'; 
+import { sendEmail } from '@/utils/mailer';
 import mongoose from 'mongoose';
 
 const STRIPE_SECRET_KEY = "sk_test_51RZ79aD5LRi4lJMY7yYuDQ8aRlBJPpAqdHdYhHOZvcSWSgJWvSzQVM3sACZJzcdWo1VHKdnZKVxxkzZJWgVYb5fz00TC8f8KKK";
@@ -37,7 +37,7 @@ const APP_URL = "https://6000-firebase-studio-1749627677554.cluster-sumfw3zmzzhz
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !session.user || !session.user.id || !session.user.email) { 
+    if (!session || !session.user || !session.user.id || !session.user.email) {
       return NextResponse.json({ message: 'Unauthorized: You must be logged in and have an email address.' }, { status: 401 });
     }
 
@@ -73,19 +73,19 @@ export async function POST(request: NextRequest) {
     if (property.availableTo && normalizedEndDate > startOfDay(new Date(property.availableTo))) {
         return NextResponse.json({ message: 'Booking end date is after property availability window.' }, { status: 400 });
     }
-    
+
     const conflictingBookingInDB = await Booking.findOne({
       listingId: propertyId,
-      bookingStatus: { $in: ['confirmed_by_host', 'pending_confirmation', 'pending_payment'] }, 
+      bookingStatus: { $in: ['confirmed_by_host', 'pending_confirmation', 'pending_payment'] },
       startDate: { $lt: normalizedEndDate },
       endDate: { $gt: normalizedStartDate },
     });
 
     if (conflictingBookingInDB) {
       console.log("[API /bookings/initiate-payment POST] Conflict found with existing booking in DB:", conflictingBookingInDB._id.toString(), "Status:", conflictingBookingInDB.bookingStatus);
-      return NextResponse.json({ message: 'These dates are no longer available for this property. Please choose different dates.' }, { status: 409 }); 
+      return NextResponse.json({ message: 'These dates are no longer available for this property. Please choose different dates.' }, { status: 409 });
     }
-    
+
     // Check for conflicts in property.bookedDateRanges as well
     if (property.bookedDateRanges) {
         const conflictingRange = property.bookedDateRanges.find(range => {
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
     let numberOfUnits = 0;
     if (property.pricePeriod === 'nightly') {
       numberOfUnits = differenceInCalendarDays(normalizedEndDate, normalizedStartDate);
-      if (numberOfUnits === 0 && normalizedStartDate.getTime() === normalizedEndDate.getTime()){ 
+      if (numberOfUnits === 0 && normalizedStartDate.getTime() === normalizedEndDate.getTime()){
         numberOfUnits = 1;
       }
     } else if (property.pricePeriod === 'weekly') {
@@ -113,39 +113,37 @@ export async function POST(request: NextRequest) {
       numberOfUnits = Math.max(1, Math.ceil(differenceInCalendarDays(normalizedEndDate, normalizedStartDate) / 30));
     }
 
-     if (numberOfUnits <= 0) { 
+     if (numberOfUnits <= 0) {
         return NextResponse.json({ message: 'Booking duration is invalid for the selected price period.' }, { status: 400 });
     }
 
     const totalPrice = property.price * numberOfUnits;
 
     const newBooking = new Booking({
-      listingId: property._id, // Use property._id
-      guestId: new mongoose.Types.ObjectId(guestId), // Ensure guestId is ObjectId
+      listingId: property._id, 
+      guestId: new mongoose.Types.ObjectId(guestId), 
       startDate: normalizedStartDate,
       endDate: normalizedEndDate,
       totalPrice,
       paymentStatus: 'pending',
-      bookingStatus: 'pending_payment', 
+      bookingStatus: 'pending_payment',
     });
     await newBooking.save();
     console.log("[API /bookings/initiate-payment POST] New pending_payment booking created:", newBooking._id.toString());
 
-    // Add to property's bookedDateRanges
-    // Re-fetch property to ensure atomicity or use $push with findByIdAndUpdate
     const updatedProperty = await PropertyModel.findByIdAndUpdate(
         propertyId,
-        { 
-            $push: { 
+        {
+            $push: {
                 bookedDateRanges: {
-                    bookingId: newBooking._id, // Mongoose will cast this to ObjectId based on schema
+                    bookingId: newBooking._id,
                     startDate: newBooking.startDate,
                     endDate: newBooking.endDate,
                     status: newBooking.bookingStatus,
                 }
             }
         },
-        { new: true } // Return the updated document
+        { new: true }
     ) as PropertyDocument | null;
 
     if (!updatedProperty) {
@@ -154,23 +152,25 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ message: 'Property update failed after booking creation.' }, { status: 500 });
     }
     console.log(`[API /bookings/initiate-payment POST] Added pending booking ${newBooking._id.toString()} to property ${updatedProperty.id} bookedDateRanges.`);
-    // **** ADDED LOGGING HERE ****
-    console.log(`[API /bookings/initiate-payment POST] Property ${updatedProperty.id} bookedDateRanges after update:`, JSON.stringify(updatedProperty.bookedDateRanges, null, 2));
-        
-    const appUrl = APP_URL; 
-    
+    // Enhanced logging:
+    const rangesInUpdatedProperty = updatedProperty.bookedDateRanges ? updatedProperty.bookedDateRanges.map(r => r.toObject()) : [];
+    console.log(`[API /bookings/initiate-payment POST] Property ${updatedProperty.id} bookedDateRanges after update (${rangesInUpdatedProperty.length} ranges):`, JSON.stringify(rangesInUpdatedProperty, null, 2));
+
+
+    const appUrl = APP_URL;
+
     const stripeSession = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [
         {
           price_data: {
-            currency: 'usd', 
+            currency: 'usd',
             product_data: {
               name: `${updatedProperty.title} (Booking: ${newBooking._id.toString()})`,
               description: `Stay from ${format(normalizedStartDate, 'MMM dd, yyyy')} to ${format(normalizedEndDate, 'MMM dd, yyyy')}. Property ID: ${propertyId}`,
               images: updatedProperty.images && updatedProperty.images.length > 0 ? [updatedProperty.images[0]] : undefined,
             },
-            unit_amount: Math.round(totalPrice * 100), 
+            unit_amount: Math.round(totalPrice * 100),
           },
           quantity: 1,
         },
@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
       mode: 'payment',
       success_url: `${appUrl}/booking/success?session_id={CHECKOUT_SESSION_ID}&booking_id=${newBooking._id.toString()}`,
       cancel_url: `${appUrl}/booking/cancel?booking_id=${newBooking._id.toString()}&property_id=${propertyId}`,
-      client_reference_id: newBooking._id.toString(), 
+      client_reference_id: newBooking._id.toString(),
       metadata: {
         bookingId: newBooking._id.toString(),
         propertyId: propertyId,
@@ -190,11 +190,11 @@ export async function POST(request: NextRequest) {
     if (!stripeSession.id) {
         console.warn("[API /bookings/initiate-payment POST] Stripe session creation failed. Deleting temporary booking:", newBooking._id.toString());
         await Booking.findByIdAndDelete(newBooking._id);
-        
+
         await PropertyModel.findByIdAndUpdate(propertyId, {
             $pull: { bookedDateRanges: { bookingId: newBooking._id } }
         }).catch(err => console.error(`[API /bookings/initiate-payment POST] Failed to clean property bookedDateRanges after Stripe failure for booking ${newBooking._id.toString()}:`, err));
-        
+
         return NextResponse.json({ message: 'Failed to initiate payment session with provider.' }, { status: 500 });
     }
     console.log("[API /bookings/initiate-payment POST] Stripe session created:", stripeSession.id, "for booking:", newBooking._id.toString());
@@ -244,5 +244,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: errorMessage, errorDetails: error.toString() }, { status: 500 });
   }
 }
-
-    
