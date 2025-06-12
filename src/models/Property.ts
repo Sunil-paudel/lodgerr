@@ -11,6 +11,8 @@ export interface PropertyDocument extends Omit<PropertyType, 'id' | 'hostId' | '
   };
   createdAt: Date; // Ensure createdAt is part of the interface if used by PropertyType and not just from timestamps
   updatedAt: Date; // Mongoose adds this with timestamps
+  availableFrom?: Date;
+  availableTo?: Date;
 }
 
 const propertySchema = new Schema<PropertyDocument>(
@@ -91,6 +93,14 @@ const propertySchema = new Schema<PropertyDocument>(
       min: 0,
       default: 0,
     },
+    availableFrom: {
+      type: Date,
+      required: false,
+    },
+    availableTo: {
+      type: Date,
+      required: false,
+    },
   },
   { 
     timestamps: true,
@@ -125,3 +135,4 @@ propertySchema.index({ createdAt: -1 });
 
 
 export default mongoose.models.Property || mongoose.model<PropertyDocument>("Property", propertySchema);
+

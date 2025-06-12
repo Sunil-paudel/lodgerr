@@ -1,3 +1,4 @@
+
 export type UserRole = 'guest' | 'host' | 'admin';
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 
@@ -32,6 +33,8 @@ export interface Property { // Corresponds to Listings
   rating?: number; // Kept from original, likely an aggregate
   reviewsCount?: number; // Kept from original, likely an aggregate
   createdAt: Date; // Added for sorting
+  availableFrom?: Date;
+  availableTo?: Date;
 }
 
 export interface Booking {
@@ -70,3 +73,4 @@ export interface Payment {
   status: PaymentStatus | 'succeeded'; // Stripe might use 'succeeded'
   createdAt: Date;
 }
+

@@ -4,11 +4,9 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import connectDB from '@/utils/db';
 import Property from '@/models/Property';
-import User from '@/models/User'; // Assuming you might want to verify host exists or get more details
+import User from '@/models/User'; 
 import * as z from 'zod';
 
-// Zod schema for validating incoming property data on the server
-// This should align with PropertyFormData and the data structure sent from the client
 const propertySubmissionSchema = z.object({
   title: z.string().min(5).max(100),
   description: z.string().min(20).max(5000),
@@ -25,7 +23,16 @@ const propertySubmissionSchema = z.object({
     })
   ).min(1, "At least one image is required.").max(5, "Maximum 5 images allowed."),
   amenities: z.array(z.string()).optional(),
-  // hostId and host object are also sent, hostId will be derived from session
+  availableFrom: z.coerce.date().optional(), // Use coerce.date() for string to Date conversion
+  availableTo: z.coerce.date().optional(),   // Use coerce.date() for string to Date conversion
+}).refine(data => {
+  if (data.availableFrom && data.availableTo) {
+    return data.availableTo >= data.availableFrom;
+  }
+  return true;
+}, {
+  message: "Availability end date cannot be before start date.",
+  path: ["availableTo"],
 });
 
 
@@ -59,17 +66,13 @@ export async function POST(request: NextRequest) {
       bedrooms,
       bathrooms,
       maxGuests,
-      images, // This will be an array of { url: string }
+      images, 
       amenities,
+      availableFrom,
+      availableTo,
     } = parsedBody.data;
 
     await connectDB();
-
-    // Optional: Verify host user exists, though session implies they do.
-    // const hostUser = await User.findById(hostId);
-    // if (!hostUser) {
-    //   return NextResponse.json({ message: 'Host user not found.' }, { status: 404 });
-    // }
 
     const newProperty = new Property({
       hostId,
@@ -82,13 +85,14 @@ export async function POST(request: NextRequest) {
       bedrooms,
       bathrooms,
       maxGuests,
-      images: images.map(img => img.url), // Store as an array of URL strings in the DB model
+      images: images.map(img => img.url), 
       amenities: amenities || [],
       host: {
         name: hostName,
         avatarUrl: hostAvatarUrl,
       },
-      // rating and reviewsCount will default or be added later
+      availableFrom,
+      availableTo,
     });
 
     await newProperty.save();
@@ -109,3 +113,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: errorMessage, errorDetails: error.toString() }, { status: 500 });
   }
 }
+

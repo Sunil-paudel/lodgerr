@@ -14,12 +14,16 @@ import { useForm, SubmitHandler, Controller, useFieldArray } from 'react-hook-fo
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-// import UploadPage from '../upload/page'; // Removed import
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, X, Image as ImageIcon } from 'lucide-react'; // Added ImageIcon and X
-import NextImage from 'next/image'; // Using NextImage for clarity
+import { Loader2, X, Image as ImageIcon, Calendar as CalendarIconLucide } from 'lucide-react'; 
+import NextImage from 'next/image';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { format, startOfDay } from 'date-fns';
+import type { DateRange } from 'react-day-picker';
+
 
 const MAX_IMAGES = 5;
 const MAX_FILE_SIZE_MB = 5;
@@ -41,6 +45,16 @@ const propertySchema = z.object({
     })
   ).min(1, "At least one image is required.").max(MAX_IMAGES, `You can upload a maximum of ${MAX_IMAGES} images.`),
   amenities: z.array(z.string()).optional(),
+  availableFrom: z.date().optional(),
+  availableTo: z.date().optional(),
+}).refine(data => {
+  if (data.availableFrom && data.availableTo) {
+    return data.availableTo >= data.availableFrom;
+  }
+  return true;
+}, {
+  message: "Availability end date cannot be before start date.",
+  path: ["availableTo"], // Path to the field to which the error will be attached
 });
 
 type PropertyFormData = z.infer<typeof propertySchema>;
@@ -59,8 +73,9 @@ export default function ListPropertyPage() {
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
   const [imageUploadStates, setImageUploadStates] = useState<Array<{ file: File; isLoading: boolean; error?: string; cloudinaryUrl?: string; previewUrl?: string }>>([]);
   const [fileInputKey, setFileInputKey] = useState(Date.now());
+  const [availabilityDateRange, setAvailabilityDateRange] = useState<DateRange | undefined>(undefined);
 
-  const { control, handleSubmit, formState: { errors }, setValue, watch } = useForm<PropertyFormData>({
+  const { control, handleSubmit, formState: { errors }, setValue, watch, trigger } = useForm<PropertyFormData>({
     resolver: zodResolver(propertySchema),
     defaultValues: {
       type: "House",
@@ -89,6 +104,15 @@ export default function ListPropertyPage() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, router]);
+  
+  useEffect(() => {
+    setValue('availableFrom', availabilityDateRange?.from);
+    setValue('availableTo', availabilityDateRange?.to);
+    if (availabilityDateRange?.from && availabilityDateRange?.to) {
+        trigger(['availableFrom', 'availableTo']); // Trigger validation for dependent fields
+    }
+  }, [availabilityDateRange, setValue, trigger]);
+
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -113,7 +137,7 @@ export default function ListPropertyPage() {
       previewUrl: URL.createObjectURL(file)
     }));
     setImageUploadStates(prev => [...prev, ...newUploadStates]);
-    setFileInputKey(Date.now()); // Reset file input to allow re-uploading the same file if needed after removal
+    setFileInputKey(Date.now()); 
 
     for (let i = 0; i < newUploadStates.length; i++) {
       const uploadState = newUploadStates[i];
@@ -203,13 +227,15 @@ export default function ListPropertyPage() {
 
     const propertyDataToSubmit = {
       ...data,
-      images: finalImageUrls, // Ensure this matches schema
+      images: finalImageUrls, 
       amenities: selectedAmenities,
       hostId: session.user.id,
       host: {
         name: session.user.name || "Unknown Host",
         avatarUrl: session.user.image || undefined,
-      }
+      },
+      availableFrom: data.availableFrom ? startOfDay(data.availableFrom) : undefined,
+      availableTo: data.availableTo ? startOfDay(data.availableTo) : undefined,
     };
 
     try {
@@ -340,6 +366,49 @@ export default function ListPropertyPage() {
                     </div>
                 </div>
 
+                {/* Availability Date Range Picker */}
+                <div className="space-y-2">
+                    <Label htmlFor="availability-dates">Availability Dates</Label>
+                    <Popover>
+                        <PopoverTrigger asChild>
+                        <Button
+                            id="availability-dates"
+                            variant="outline"
+                            className={`w-full justify-start text-left font-normal ${!availabilityDateRange && "text-muted-foreground"}`}
+                            disabled={formIsLoading}
+                        >
+                            <CalendarIconLucide className="mr-2 h-4 w-4" />
+                            {availabilityDateRange?.from ? (
+                            availabilityDateRange.to ? (
+                                <>
+                                {format(availabilityDateRange.from, "LLL dd, y")} -{" "}
+                                {format(availabilityDateRange.to, "LLL dd, y")}
+                                </>
+                            ) : (
+                                format(availabilityDateRange.from, "LLL dd, y")
+                            )
+                            ) : (
+                            <span>Pick availability period (optional)</span>
+                            )}
+                        </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                            initialFocus
+                            mode="range"
+                            defaultMonth={availabilityDateRange?.from}
+                            selected={availabilityDateRange}
+                            onSelect={setAvailabilityDateRange}
+                            numberOfMonths={2}
+                            disabled={(date) => date < startOfDay(new Date())}
+                        />
+                        </PopoverContent>
+                    </Popover>
+                    {errors.availableFrom && <p className="text-sm text-destructive">{errors.availableFrom.message}</p>}
+                    {errors.availableTo && <p className="text-sm text-destructive">{errors.availableTo.message}</p>}
+                </div>
+
+
                 <div className="space-y-2">
                     <Label>Amenities</Label>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3 border p-4 rounded-md max-h-60 overflow-y-auto">
@@ -357,7 +426,6 @@ export default function ListPropertyPage() {
                     </div>
                 </div>
 
-                {/* Image Upload Section */}
                 <div className="space-y-4">
                     <div className="space-y-2">
                         <Label htmlFor="images" className="flex items-center">
@@ -386,7 +454,7 @@ export default function ListPropertyPage() {
                                         alt={`Preview ${uploadState.file?.name || index}`}
                                         fill
                                         sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 20vw"
-                                        className="object-contain rounded" // Changed to object-contain for better preview
+                                        className="object-contain rounded" 
                                     />
                                 )}
                                 {uploadState.isLoading && (
@@ -430,7 +498,6 @@ export default function ListPropertyPage() {
                          : (imageUploadStates.some(s=>s.isLoading) ? ' (Uploading...)' : ' (No images selected yet)')}
                     </p>
                 </div>
-                {/* End of Image Upload Section. Removed the <UploadPage /> component here. */}
 
 
                 <CardFooter className="p-0 pt-6">
