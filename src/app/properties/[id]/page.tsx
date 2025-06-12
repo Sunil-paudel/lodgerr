@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
-import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, Home as HomeIcon, ImageIcon, UserCircle, Calendar as CalendarIconLucide, DollarSign, Wifi, Loader2, CheckCircle, Moon, Package, Banknote } from 'lucide-react';
+import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, Home as HomeIcon, ImageIcon, UserCircle, Calendar as CalendarIconLucide, DollarSign, Wifi, Loader2, CheckCircle, Moon, Package, Banknote, CalendarX } from 'lucide-react';
 import { PropertyAmenityIcon } from '@/components/property/PropertyAmenityIcon';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -22,7 +22,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import type { DateRange } from 'react-day-picker';
-import { format, isValid as isValidDate, differenceInCalendarDays, startOfDay, isBefore } from 'date-fns';
+import { format, isValid as isValidDate, differenceInCalendarDays, startOfDay, isBefore, parseISO } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { loadStripe } from '@stripe/stripe-js';
 
@@ -55,6 +55,7 @@ const PropertyDetailsPage = () => {
   const [availabilityText, setAvailabilityText] = useState<string | null>(null);
   const [currentBookingPriceDetails, setCurrentBookingPriceDetails] = useState<BookingPriceDetails | null>(null);
   const [activeBookings, setActiveBookings] = useState<ActiveBookingRange[] | null>(null);
+  const [isLoadingActiveBookings, setIsLoadingActiveBookings] = useState(true);
 
 
   useEffect(() => {
@@ -62,12 +63,14 @@ const PropertyDetailsPage = () => {
       if (!propertyId) {
         setPageError("Property ID is missing.");
         setIsLoading(false);
+        setIsLoadingActiveBookings(false);
         return;
       }
       setIsLoading(true);
       setPageError(null);
-      setProperty(null); // Reset property on new ID
-      setActiveBookings(null); // Reset active bookings
+      setProperty(null); 
+      setActiveBookings(null); 
+      setIsLoadingActiveBookings(true);
 
       try {
         const response = await fetch(`/api/properties/${propertyId}`);
@@ -93,6 +96,7 @@ const PropertyDetailsPage = () => {
 
   useEffect(() => {
     if (property && property.id) {
+      setIsLoadingActiveBookings(true);
       const fetchActiveBookingsForProperty = async () => {
         try {
           const response = await fetch(`/api/properties/${property.id}/active-bookings`);
@@ -106,11 +110,16 @@ const PropertyDetailsPage = () => {
         } catch (error) {
           console.error("Error fetching active bookings:", error);
           setActiveBookings([]);
+        } finally {
+          setIsLoadingActiveBookings(false);
         }
       };
       fetchActiveBookingsForProperty();
+    } else if (!property && !isLoading) {
+      // If property failed to load, don't try to fetch bookings
+      setIsLoadingActiveBookings(false);
     }
-  }, [property]);
+  }, [property, isLoading]);
 
 
   useEffect(() => {
@@ -226,17 +235,19 @@ const PropertyDetailsPage = () => {
                 description: result.message || "The selected dates have just been booked. Please choose different dates.",
                 variant: "destructive",
             });
-            setSelectedDateRange(undefined); // Clear selection
+            setSelectedDateRange(undefined); 
             setCurrentBookingPriceDetails(null);
-            // Optionally, refresh active bookings here if desired
+            
+            setIsLoadingActiveBookings(true);
             if (property && property.id) {
               const bookingsResponse = await fetch(`/api/properties/${property.id}/active-bookings`);
               if (bookingsResponse.ok) setActiveBookings(await bookingsResponse.json());
+              setIsLoadingActiveBookings(false);
             }
         } else {
             throw new Error(result.message || "Failed to initiate booking payment.");
         }
-        return; // Stop further processing
+        return; 
       }
       
       const stripe = await stripePromise;
@@ -408,7 +419,7 @@ const PropertyDetailsPage = () => {
                 </div>
             </div>
 
-           {availabilityText === null && isLoading ? (
+           {availabilityText === null && (isLoading || isLoadingActiveBookings) ? (
                 <div className="py-6 border-b border-border">
                     <h3 className="text-xl font-semibold mb-2 font-headline flex items-center">
                         <CalendarIconLucide size={20} className="mr-2 text-primary" />
@@ -426,11 +437,34 @@ const PropertyDetailsPage = () => {
                 <p className="text-foreground/90">{availabilityText}</p>
                  { (property.availableFrom || property.availableTo) && (
                     <p className="text-xs text-muted-foreground mt-1">
-                        Note: Specific dates within this period might already be booked. Please check the calendar below.
+                        Note: Specific dates within this period might already be booked. Please check the calendar and booked periods below.
                     </p>
                  )}
               </div>
             ) : null}
+
+            <div className="py-6 border-b border-border">
+              <h3 className="text-xl font-semibold mb-3 font-headline flex items-center">
+                <CalendarX size={20} className="mr-2 text-destructive" />
+                Currently Booked Periods
+              </h3>
+              {isLoadingActiveBookings ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-5 w-full" />
+                  <Skeleton className="h-5 w-5/6" />
+                </div>
+              ) : activeBookings && activeBookings.length > 0 ? (
+                <ul className="space-y-1 text-sm text-foreground/80 list-disc list-inside">
+                  {activeBookings.map((booking, index) => (
+                    <li key={index}>
+                      {format(parseISO(booking.startDate), 'LLL dd, yyyy')} - {format(parseISO(booking.endDate), 'LLL dd, yyyy')}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">This property has no active bookings at the moment.</p>
+              )}
+            </div>
 
 
             <div className="py-6 border-b border-border">
@@ -477,7 +511,7 @@ const PropertyDetailsPage = () => {
                   pricePeriod={property.pricePeriod} 
                   availableFrom={property.availableFrom}
                   availableTo={property.availableTo}
-                  activeBookings={activeBookings} // Pass active bookings
+                  activeBookings={activeBookings} 
                 />
               </div>
               
@@ -524,3 +558,5 @@ const PropertyDetailsPage = () => {
 };
 
 export default PropertyDetailsPage;
+
+    
