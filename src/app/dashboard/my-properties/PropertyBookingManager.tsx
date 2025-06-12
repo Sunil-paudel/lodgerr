@@ -23,7 +23,7 @@ const getInitials = (name?: string | null) => {
   return (names[0][0] + (names[names.length - 1][0] || "")).toUpperCase();
 };
 
-const getStatusColor = (status: BookingStatus) => {
+const getStatusColor = (status?: BookingStatus) => { // Allow status to be undefined
   switch (status) {
     case 'pending_confirmation': return 'text-yellow-600 bg-yellow-100/80 border-yellow-300';
     case 'confirmed_by_host': return 'text-green-600 bg-green-100/80 border-green-300';
@@ -32,6 +32,13 @@ const getStatusColor = (status: BookingStatus) => {
     case 'completed': return 'text-blue-600 bg-blue-100/80 border-blue-300';
     default: return 'text-gray-600 bg-gray-100/80 border-gray-300';
   }
+};
+
+const formatBookingStatus = (status?: BookingStatus): string => {
+  if (!status || typeof status !== 'string') {
+    return 'Unknown Status';
+  }
+  return status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 };
 
 
@@ -55,16 +62,15 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
         throw new Error(result.message || 'Failed to update booking status.');
       }
 
+      // newStatus is guaranteed to be a string here
+      const formattedNewStatus = newStatus.replace(/_/g, ' ');
+
       toast({
         title: 'Booking Updated',
-        description: `Booking status changed to ${newStatus.replace('_', ' ')}.`,
+        description: `Booking status changed to ${formattedNewStatus}.`,
       });
       
-      // Refresh data to show updated status
       router.refresh(); 
-      // Optionally, update local state immediately if router.refresh() has a delay
-      // For now, relying on router.refresh() which re-runs server components.
-      // If this page were fully client-side, we'd update `bookings` state here.
 
     } catch (error: any) {
       toast({
@@ -162,7 +168,7 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
                         </div>
                         </div>
                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(booking.bookingStatus)} border`}>
-                            {booking.bookingStatus.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                            {formatBookingStatus(booking.bookingStatus)}
                         </span>
                    </div>
                 </CardHeader>
