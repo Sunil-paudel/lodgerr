@@ -9,22 +9,23 @@ interface MailOptions {
   html?: string;
 }
 
-// Environment variables for Gmail
-const GOOGLE_EMAIL = process.env.GOOGLE_EMAIL;
-const GOOGLE_PASSWORD = process.env.GOOGLE_PASSWORD;
+// Hardcoded Gmail credentials for testing
+const GOOGLE_EMAIL = "pacbot24@gmail.com";
+const GOOGLE_PASSWORD = "ofzyqssefycvpawh"; // This appears to be an App Password
 
 let transporterInstance: Transporter | null = null;
 let mailerConfigError: string | null = null;
 
 if (!GOOGLE_EMAIL || !GOOGLE_PASSWORD) {
-  mailerConfigError = "Gmail email service is not configured. Missing GOOGLE_EMAIL or GOOGLE_PASSWORD environment variables. Emails will not be sent.";
+  // This condition should not be met with hardcoded values but kept for structural integrity
+  mailerConfigError = "Hardcoded Gmail credentials are missing. Emails will not be sent.";
   console.warn(`[Mailer] ${mailerConfigError}`);
 } else {
   transporterInstance = nodemailer.createTransport({
     service: 'gmail',
     auth: {
       user: GOOGLE_EMAIL,
-      pass: GOOGLE_PASSWORD, // For Gmail, this should ideally be an App Password
+      pass: GOOGLE_PASSWORD,
     },
   });
 
@@ -35,7 +36,7 @@ if (!GOOGLE_EMAIL || !GOOGLE_PASSWORD) {
       console.error(`[Mailer] ${mailerConfigError}`);
       transporterInstance = null; // Invalidate transporter if verification fails
     } else {
-      console.log('[Mailer] Gmail email service is configured and ready to send emails.');
+      console.log('[Mailer] Gmail email service is configured with hardcoded credentials and ready to send emails.');
     }
   });
 }
@@ -48,13 +49,9 @@ export const sendEmail = async (options: MailOptions): Promise<{success: boolean
     return { success: false, error: errorMessage };
   }
 
-  if (!GOOGLE_EMAIL) { // Should be caught by the initial check, but good for robustness
-    return { success: false, error: "GOOGLE_EMAIL is not defined for the 'from' address." };
-  }
-
   try {
     const info = await transporterInstance.sendMail({
-      from: `"${process.env.APP_NAME || 'Lodger App'}" <${GOOGLE_EMAIL}>`, // Using GOOGLE_EMAIL as the sender address
+      from: `"${process.env.APP_NAME || 'Lodger App'}" <${GOOGLE_EMAIL}>`, // Using hardcoded GOOGLE_EMAIL as the sender address
       to: options.to,
       subject: options.subject,
       text: options.text,
@@ -65,7 +62,7 @@ export const sendEmail = async (options: MailOptions): Promise<{success: boolean
   } catch (error: any) {
     let specificError = error.message;
     if (error.code === 'EAUTH' || (error.responseCode && error.responseCode === 535)) {
-        specificError = "Authentication failed with Gmail. Check your GOOGLE_EMAIL and GOOGLE_PASSWORD (use App Password if 2FA is enabled). Also, ensure 'Less secure app access' is handled appropriately if not using App Password (not recommended).";
+        specificError = "Authentication failed with Gmail. Check your hardcoded GOOGLE_EMAIL and GOOGLE_PASSWORD. Ensure 'Less secure app access' is handled appropriately if not using an App Password (not recommended for regular passwords).";
         console.error(`[Mailer] Gmail Authentication Error: ${specificError}`);
     } else {
         console.error(`[Mailer] Error sending email via Gmail. Subject: "${options.subject}", To: "${options.to}"`, error);
