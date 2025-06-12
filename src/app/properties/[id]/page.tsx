@@ -24,10 +24,12 @@ import { useToast } from '@/hooks/use-toast';
 import type { DateRange } from 'react-day-picker';
 import { format, isValid as isValidDate } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
-import { loadStripe } from '@stripe/stripe-js'; // Import Stripe.js
+import { loadStripe } from '@stripe/stripe-js';
 
-// Ensure your Stripe publishable key is in .env.local
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+// **WARNING: Hardcoded Stripe Publishable Key for testing. Remove before deployment!**
+const NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = "pk_test_51RZ79aD5LRi4lJMY7NPB8uLMtw4RVctP94bSLctPHBmZmrz1qVPpJwYue3CARvQ6PiMpcHnyqUSoGgaaJZk4bogo00FEf6knF0";
+
+const stripePromise = loadStripe(NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
 
 
 const PropertyDetailsPage = () => {
@@ -111,10 +113,16 @@ const PropertyDetailsPage = () => {
       toast({ title: "Error", description: "Property data not available.", variant: "destructive" });
       return;
     }
+     if (!NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) {
+      toast({ title: "Configuration Error", description: "Stripe is not configured for payments. Please contact support.", variant: "destructive" });
+      console.error("Stripe publishable key is not set.");
+      return;
+    }
+
 
     setIsBookingLoading(true);
     try {
-      const response = await fetch('/api/bookings/initiate-payment', { // Updated API endpoint
+      const response = await fetch('/api/bookings/initiate-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -129,7 +137,6 @@ const PropertyDetailsPage = () => {
         throw new Error(result.message || "Failed to initiate booking payment.");
       }
       
-      // Redirect to Stripe Checkout
       const stripe = await stripePromise;
       if (!stripe) {
         throw new Error("Stripe.js has not loaded yet.");
@@ -142,25 +149,18 @@ const PropertyDetailsPage = () => {
         console.error("Stripe redirect error:", stripeError);
         throw new Error(stripeError.message || "Failed to redirect to Stripe.");
       }
-      // If redirectToCheckout is successful, the user is redirected and this part of the code might not be reached
-      // unless there's an immediate error before redirection.
-
     } catch (error: any) {
       toast({
         title: "Booking Failed",
         description: error.message || "An unexpected error occurred.",
         variant: "destructive",
       });
-    } finally {
-      // setIsBookingLoading(false); // This might not be reached if redirect is successful
-      // If redirect fails, we want to set loading to false.
-      // It's tricky because successful redirect means user leaves the page.
-      // Consider if there's a scenario where we need to set this false if redirect doesn't happen.
-      // For now, if an error occurs before stripe.redirectToCheckout, it will be caught and set to false.
-       if (!isBookingLoading) { // only set if not already false due to error/completion
-           setIsBookingLoading(false);
-       }
-    }
+      // Set loading to false only if an error occurs *before* redirect or if redirect fails
+      setIsBookingLoading(false);
+    } 
+    // No finally block for setIsBookingLoading(false) here,
+    // because successful redirection means the component unmounts or user navigates away.
+    // It's set to false in the catch block.
   };
 
 
@@ -388,12 +388,17 @@ const PropertyDetailsPage = () => {
                 size="lg" 
                 className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
                 onClick={handleReserve}
-                disabled={isBookingLoading || !selectedDateRange?.from || !selectedDateRange?.to}
+                disabled={isBookingLoading || !selectedDateRange?.from || !selectedDateRange?.to || !NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
               >
                 {isBookingLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {isBookingLoading ? "Processing..." : "Reserve & Pay"}
               </Button>
-              <p className="text-xs text-muted-foreground text-center mt-2">You will be redirected to our payment partner.</p>
+              {!NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY && (
+                <p className="text-xs text-destructive text-center mt-2">Payments are currently unavailable.</p>
+              )}
+              {NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY && (
+                <p className="text-xs text-muted-foreground text-center mt-2">You will be redirected to our payment partner.</p>
+              )}
             </div>
           </div>
         </div>

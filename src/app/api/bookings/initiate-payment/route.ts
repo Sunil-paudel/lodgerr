@@ -9,9 +9,12 @@ import connectDB from '@/utils/db';
 import Booking from '@/models/Booking';
 import PropertyModel from '@/models/Property';
 import * as z from 'zod';
-import { differenceInCalendarDays, startOfDay } from 'date-fns';
+import { differenceInCalendarDays, startOfDay, format } from 'date-fns'; // Added format
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+// **WARNING: Hardcoded Stripe Secret Key for testing. Remove before deployment!**
+const STRIPE_SECRET_KEY = "sk_test_51RZ79aD5LRi4lJMY7yYuDQ8aRlBJPpAqdHdYhHOZvcSWSgJWvSzQVM3sACZJzcdWo1VHKdnZKVxxkzZJWgVYb5fz00TC8f8KKK";
+
+const stripe = new Stripe(STRIPE_SECRET_KEY!, {
   apiVersion: '2024-04-10',
 });
 
@@ -27,6 +30,9 @@ const initiatePaymentSchema = z.object({
   message: "End date must be after start date.",
   path: ["endDate"],
 });
+
+// **WARNING: Hardcoded App URL for testing. Revert to process.env for deployment!**
+const APP_URL = "http://localhost:9002"; // Or your ngrok URL if testing webhooks locally
 
 export async function POST(request: NextRequest) {
   try {
@@ -70,15 +76,13 @@ export async function POST(request: NextRequest) {
     // Advanced conflict detection: Check against existing confirmed/pending bookings
     const conflictingBooking = await Booking.findOne({
       listingId: propertyId,
-      bookingStatus: { $in: ['confirmed_by_host', 'pending_confirmation'] }, // Check against confirmed or pending confirmation bookings
-      // Check for date overlap:
-      // (ExistingBooking.startDate < NewBooking.endDate) AND (ExistingBooking.endDate > NewBooking.startDate)
+      bookingStatus: { $in: ['confirmed_by_host', 'pending_confirmation'] }, 
       startDate: { $lt: normalizedEndDate },
       endDate: { $gt: normalizedStartDate },
     });
 
     if (conflictingBooking) {
-      return NextResponse.json({ message: 'These dates are no longer available for this property. Please choose different dates.' }, { status: 409 }); // 409 Conflict
+      return NextResponse.json({ message: 'These dates are no longer available for this property. Please choose different dates.' }, { status: 409 }); 
     }
 
     let numberOfUnits = 0;
@@ -97,7 +101,6 @@ export async function POST(request: NextRequest) {
     }
     const totalPrice = property.price * Math.max(numberOfUnits, 1);
 
-    // Create a booking record in our database first
     const newBooking = new Booking({
       listingId: propertyId,
       guestId,
@@ -109,9 +112,8 @@ export async function POST(request: NextRequest) {
     });
     await newBooking.save();
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002';
+    const appUrl = APP_URL; // Using hardcoded value
 
-    // Create a Stripe Checkout session
     const stripeSession = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [
@@ -137,7 +139,7 @@ export async function POST(request: NextRequest) {
         propertyId: propertyId,
         guestId: guestId,
       },
-      customer_email: session.user.email, // Pre-fill customer email
+      customer_email: session.user.email,
     });
 
     if (!stripeSession.id) {
@@ -158,4 +160,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: errorMessage, errorDetails: error.toString() }, { status: 500 });
   }
 }
-

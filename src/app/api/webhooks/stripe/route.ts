@@ -3,16 +3,20 @@ import { NextResponse, type NextRequest } from 'next/server';
 import Stripe from 'stripe';
 import connectDB from '@/utils/db';
 import Booking from '@/models/Booking';
-import Payment from '@/models/Payment'; // Assuming you have a Payment model
+import Payment from '@/models/Payment';
 import { Readable } from 'stream';
 
-// Ensure STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are set in your .env.local
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+// **WARNING: Hardcoded Stripe Secret Key for testing. Remove before deployment!**
+const STRIPE_SECRET_KEY = "sk_test_51RZ79aD5LRi4lJMY7yYuDQ8aRlBJPpAqdHdYhHOZvcSWSgJWvSzQVM3sACZJzcdWo1VHKdnZKVxxkzZJWgVYb5fz00TC8f8KKK";
+
+// **WARNING: Hardcoded Stripe Webhook Secret. Replace with your actual secret from Stripe Dashboard!**
+// ** This endpoint WILL NOT WORK securely without the correct webhook secret. **
+const WEBHOOK_SECRET = "whsec_YOUR_STRIPE_WEBHOOK_SIGNING_SECRET"; // <-- REPLACE THIS!
+
+const stripe = new Stripe(STRIPE_SECRET_KEY!, {
   apiVersion: '2024-04-10',
 });
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 
-// Helper to convert NextRequest stream to Node.js Readable stream
 async function requestToBuffer(request: NextRequest) {
     const reader = request.body?.getReader();
     if (!reader) {
@@ -27,8 +31,6 @@ async function requestToBuffer(request: NextRequest) {
     return Buffer.concat(chunks);
 }
 
-
-// Disable Next.js body parsing for this route to access the raw body for signature verification
 export const config = {
   api: {
     bodyParser: false,
@@ -36,9 +38,9 @@ export const config = {
 };
 
 export async function POST(request: NextRequest) {
-  if (!webhookSecret) {
-    console.error("Stripe webhook secret is not configured.");
-    return NextResponse.json({ message: "Webhook secret not configured." }, { status: 500 });
+  if (!WEBHOOK_SECRET || WEBHOOK_SECRET === "whsec_YOUR_STRIPE_WEBHOOK_SIGNING_SECRET") {
+    console.error("Stripe webhook secret is not configured or is using the placeholder. Please set it up in your Stripe Dashboard and update the code.");
+    return NextResponse.json({ message: "Webhook secret not configured. Payment confirmation will fail." }, { status: 500 });
   }
   
   let event: Stripe.Event;
@@ -50,7 +52,7 @@ export async function POST(request: NextRequest) {
       console.warn("Stripe webhook error: Missing signature.");
       return NextResponse.json({ message: "Missing Stripe signature." }, { status: 400 });
     }
-    event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
+    event = stripe.webhooks.constructEvent(rawBody, sig, WEBHOOK_SECRET);
   } catch (err: any) {
     console.error(`Stripe webhook signature verification failed: ${err.message}`);
     return NextResponse.json({ message: `Webhook Error: ${err.message}` }, { status: 400 });
@@ -58,7 +60,6 @@ export async function POST(request: NextRequest) {
 
   await connectDB();
 
-  // Handle the event
   switch (event.type) {
     case 'checkout.session.completed':
       const session = event.data.object as Stripe.Checkout.Session;
@@ -89,20 +90,17 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ received: true, message: 'Booking already processed.' });
         }
 
-        // Update Booking
         booking.paymentStatus = 'paid';
-        booking.bookingStatus = 'confirmed_by_host'; // Or 'payment_successful_awaiting_final_confirmation'
+        booking.bookingStatus = 'confirmed_by_host';
         await booking.save();
         console.log(`[Webhook] Booking ${bookingId} updated to paid and confirmed.`);
 
-        // Create Payment record
         const newPayment = new Payment({
           bookingId: booking._id,
           stripePaymentIntentId: paymentIntentId,
-          // stripeChargeId might need to be retrieved separately if not directly on paymentIntent or if using charges API
-          amount: session.amount_total, // amount_total is in cents
+          amount: session.amount_total, 
           currency: session.currency?.toLowerCase() || 'usd',
-          status: 'succeeded', // from Stripe's perspective
+          status: 'succeeded',
         });
         await newPayment.save();
         console.log(`[Webhook] Payment record created for booking ${bookingId}, paymentIntent ${paymentIntentId}`);
@@ -122,7 +120,6 @@ export async function POST(request: NextRequest) {
             const bookingToUpdate = await Booking.findById(failedBookingId);
             if (bookingToUpdate && bookingToUpdate.paymentStatus !== 'paid') {
                 bookingToUpdate.paymentStatus = 'failed';
-                // bookingToUpdate.bookingStatus = 'payment_failed'; // Potentially add a new status
                 await bookingToUpdate.save();
                 console.log(`[Webhook] Booking ${failedBookingId} paymentStatus updated to failed.`);
             }
