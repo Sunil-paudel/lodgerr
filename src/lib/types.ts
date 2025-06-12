@@ -58,15 +58,15 @@ export interface Booking {
   paymentStatus: PaymentStatus;
   bookingStatus: BookingStatus; // Added booking status
   createdAt: Date;
-  // Optional: Add guest details if needed directly on booking, or populate from User model
-  guestDetails?: {
+  guestDetails?: { // Populated from User model
     name?: string | null;
     email?: string | null;
+    avatarUrl?: string | null; 
   };
-  // Optional: Add property details if needed, or populate from Property model
-  propertyDetails?: {
+  propertyDetails?: { // Optional: for views where bookings are listed directly
     title?: string;
     mainImage?: string;
+    id?: string;
   }
 }
 
@@ -87,3 +87,4 @@ export interface Payment {
   status: PaymentStatus | 'succeeded';
   createdAt: Date;
 }
+
