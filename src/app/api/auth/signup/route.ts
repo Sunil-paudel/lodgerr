@@ -1,87 +1,78 @@
 
 import User from "@/models/User";
-import connectDB from "@/utils/db"; // Changed from connect to connectDB
+import connectDB from "@/utils/db";
 import bcrypt from "bcryptjs";
 import { NextResponse, type NextRequest } from "next/server";
-import nodemailer from "nodemailer";
 
 export const POST = async (request: NextRequest) => {
   try {
     const { fullName, email, password } = await request.json();
+    console.log("[Signup API] Received request with data:", { fullName, email, password_exists: !!password });
 
     if (!fullName || !email || !password) {
+      console.log("[Signup API] Missing required fields.");
       return NextResponse.json(
         { message: "Missing required fields: fullName, email, and password." },
         { status: 400 }
       );
     }
-    console.log("Signup API: Attempting DB connection for signup.");
-    await connectDB(); // Changed from connect() to connectDB()
-    console.log("Signup API: DB connection successful (or already connected).");
 
+    console.log("[Signup API] Connecting to DB...");
+    await connectDB();
+    console.log("[Signup API] DB connected.");
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      console.log("Signup API: User already exists with email:", email);
+      console.log("[Signup API] User already exists with email:", email);
       return NextResponse.json(
-        { message: "User with this email already exists" },
-        { status: 409 } 
+        { message: "User with this email already exists. Please use a different email or log in." },
+        { status: 409 } // Conflict
       );
     }
+    console.log("[Signup API] No existing user found with email:", email);
 
-    const hashedPassword = await bcrypt.hash(password, 5);
-    console.log("Generated hashedPassword:", hashedPassword); 
+    const hashedPassword = await bcrypt.hash(password, 10);
+    console.log("[Signup API] Password hashed successfully for email:", email);
 
     const newUser = new User({
       name: fullName,
       email,
-      passwordHash: hashedPassword, 
+      passwordHash: hashedPassword,
+      // role defaults to 'guest' as per schema
     });
 
-    console.log("New user object before save:", JSON.stringify(newUser.toObject(), null, 2)); 
-
+    console.log("[Signup API] Attempting to save new user:", { name: newUser.name, email: newUser.email });
     await newUser.save();
-    console.log("User saved successfully."); 
-
-    
-    
+    console.log("[Signup API] User saved successfully:", { id: newUser._id, email: newUser.email });
 
     return NextResponse.json(
-      { message: "User created successfully. Confirmation email sent." },
+      { message: "User created successfully. You can now log in." },
       { status: 201 }
     );
-
   } catch (err: any) {
-    console.error("Signup API Error:", err); 
-    
-    let errorMessage = "An unexpected error occurred during signup.";
-    let errorDetails = ""; // For more detailed logging on the server
+    console.error("[Signup API] Error during signup process:", err);
 
-    if (err.message) {
-        errorMessage = err.message;
-    }
-    
-    // Capture stack or full error object for server logs
-    if (err.stack) {
-        errorDetails = err.stack;
-    } else if (typeof err === 'object' && err !== null) {
-        errorDetails = JSON.stringify(err);
-    }
-    
-    // Specific message if it's a DB connection error from our connectDB function
-    if (errorMessage.startsWith("Database connection failed:") || errorMessage === "Server configuration error: MONGODB_URI is not defined.") {
-         console.error("Signup API - Database Connection Error Details:", errorDetails || errorMessage);
-         return NextResponse.json(
-            { message: "Server error: Could not connect to the database. Please try again later.", error: errorMessage }, // Keep client message generic
-            { status: 500 }
-        );
+    // Specifically check for MongoDB duplicate key error (code 11000)
+    if (err.code === 11000) {
+      let DMessage = "A user with these details already exists.";
+      if (err.keyPattern?.email) {
+        DMessage = "This email address is already registered. Please use a different email or log in.";
+      }
+      // Add checks for other unique fields if you have them
+      // else if (err.keyPattern?.someOtherUniqueField) {
+      //   DMessage = "This someOtherUniqueField is already in use.";
+      // }
+      console.log("[Signup API] Duplicate key error:", DMessage);
+      return NextResponse.json(
+        { message: DMessage },
+        { status: 409 } // Conflict
+      );
     }
 
-    // Generic server error for other issues
-    console.error("Signup API - Other Error Details:", errorDetails || errorMessage);
+    // General server error
     return NextResponse.json(
-        { message: "Server error during signup. Please try again later.", error: errorMessage }, // Keep client message generic
-        { status: 500 }
+      { message: "An internal server error occurred during signup. Please try again later.", error: err.message },
+      { status: 500 }
     );
   }
 };
