@@ -62,14 +62,21 @@ export default function SignUpPage() {
           title: "Success!",
           description: "Account created successfully. You can now log in.",
         });
-        // Optionally redirect to login page or clear form
         setFullName('');
         setEmail('');
         setPassword('');
         setConfirmPassword('');
       } else {
         // Prioritize showing specific error from backend if available
-        const description = result.error || result.message || "An error occurred during signup.";
+        let description = "An error occurred during signup.";
+        if (response.status === 409 && result.message) { // Specifically handle 409 (Conflict)
+            description = result.message; // This should be "This email address is already registered..." or similar
+        } else if (result.errorDetails) {
+            description = `${result.message} Details: ${result.errorDetails}`;
+        } else if (result.message) {
+            description = result.message;
+        }
+        
         toast({
           title: "Signup Failed",
           description: description,
