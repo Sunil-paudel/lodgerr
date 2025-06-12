@@ -119,15 +119,13 @@ export function PropertyBookingCalendar({
     }
   }
 
-  // Create a key for the Calendar that changes when activeBookings status changes
-  // from loading (null) to loaded (array), or when the number of bookings changes.
-  const calendarKey = activeBookings === null ? 'loading-bookings' : `loaded-bookings-${activeBookings.length}`;
+  const calendarKey = activeBookings === null ? 'loading-bookings' : `bookings-${JSON.stringify(activeBookings)}`;
 
   return (
     <div className="space-y-2">
       <Label htmlFor="booking-dates" className="text-sm font-medium">Select Dates</Label>
       <Calendar
-        key={calendarKey} // Add key here to force re-evaluation when activeBookings change
+        key={calendarKey} 
         id="booking-dates"
         mode="range"
         selected={selectedRange}
