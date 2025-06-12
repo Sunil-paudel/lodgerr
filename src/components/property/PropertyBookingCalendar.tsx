@@ -4,11 +4,9 @@
 import { useState, useEffect } from 'react';
 import { Calendar } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
-import type { DateRange } from "react-day-picker";
+import type { DateRange, DayModifiers } from "react-day-picker";
 import { startOfDay, differenceInCalendarDays, isBefore, isAfter, isValid, parseISO, isSameDay, format } from 'date-fns';
-import type { Property } from '@/lib/types';
-
-type ActiveBookingRange = { startDate: string; endDate: string };
+import type { Property, BookedDateRange, BookingStatus } from '@/lib/types'; // Updated import
 
 interface PropertyBookingCalendarProps {
   selectedRange: DateRange | undefined;
@@ -17,7 +15,7 @@ interface PropertyBookingCalendarProps {
   pricePeriod: Property['pricePeriod'];
   availableFrom?: Date | string;
   availableTo?: Date | string;
-  activeBookings?: ActiveBookingRange[] | null; // New prop
+  activeBookings?: BookedDateRange[] | null; // Changed type to BookedDateRange
 }
 
 export function PropertyBookingCalendar({
@@ -27,7 +25,7 @@ export function PropertyBookingCalendar({
   pricePeriod,
   availableFrom,
   availableTo,
-  activeBookings
+  activeBookings // This prop now expects BookedDateRange[]
 }: PropertyBookingCalendarProps) {
 
   const processDateProp = (dateProp?: Date | string): Date | null => {
@@ -79,6 +77,20 @@ export function PropertyBookingCalendar({
     }
   }, [selectedRange, price, pricePeriod]);
 
+  const isDayBookedOrPending = (day: Date, ranges: BookedDateRange[] | null | undefined): boolean => {
+    if (!ranges) return false;
+    const dayAtMidnight = startOfDay(day);
+    return ranges.some(range => {
+      if (!['pending_payment', 'pending_confirmation', 'confirmed_by_host'].includes(range.status)) {
+        return false;
+      }
+      // Dates from `property.bookedDateRanges` are already Date objects or ISO strings
+      const startDate = startOfDay(parseISO(range.startDate as unknown as string));
+      const endDate = startOfDay(parseISO(range.endDate as unknown as string));
+      return isValid(startDate) && isValid(endDate) && dayAtMidnight >= startDate && dayAtMidnight < endDate;
+    });
+  };
+  
   const disabledDaysFunc = (dateToTest: Date): boolean => {
     const dateAtMidnight = startOfDay(dateToTest);
 
@@ -90,11 +102,16 @@ export function PropertyBookingCalendar({
 
     if (activeBookings && activeBookings.length > 0) {
       for (const booking of activeBookings) {
-        const bookingStart = startOfDay(parseISO(booking.startDate));
-        const bookingEnd = startOfDay(parseISO(booking.endDate));
+        // Ensure booking.startDate and booking.endDate are valid Date objects or parseable strings
+        const bookingStart = startOfDay(parseISO(booking.startDate as unknown as string));
+        const bookingEnd = startOfDay(parseISO(booking.endDate as unknown as string)); 
+        
         if (isValid(bookingStart) && isValid(bookingEnd)) {
-          if (dateAtMidnight >= bookingStart && dateAtMidnight < bookingEnd) {
-            return true;
+          // Disable if date is within a booked/pending range that makes it unavailable
+          if (['pending_payment', 'pending_confirmation', 'confirmed_by_host'].includes(booking.status)) {
+            if (dateAtMidnight >= bookingStart && dateAtMidnight < bookingEnd) {
+              return true;
+            }
           }
         }
       }
@@ -121,6 +138,15 @@ export function PropertyBookingCalendar({
 
   const calendarKey = activeBookings === null ? 'loading-bookings' : `bookings-${JSON.stringify(activeBookings)}`;
 
+  const dayClassName = (day: Date, modifiers: DayModifiers) => {
+    if (isDayBookedOrPending(day, activeBookings)) {
+      // These dates will also be `disabled` by `disabledDaysFunc`, so this class adds visual style.
+      return "bg-destructive/30 text-destructive-foreground opacity-60 cursor-not-allowed";
+    }
+    return "";
+  };
+
+
   return (
     <div className="space-y-2">
       <Label htmlFor="booking-dates" className="text-sm font-medium">Select Dates</Label>
@@ -134,11 +160,12 @@ export function PropertyBookingCalendar({
         onMonthChange={handleMonthChange}
         numberOfMonths={1}
         disabled={disabledDaysFunc}
+        dayClassName={dayClassName}
         className="rounded-md border shadow-sm bg-background"
         fromDate={ normAvailableFrom && isAfter(normAvailableFrom, today) ? normAvailableFrom : today }
         toDate={normAvailableTo || undefined}
         footer={
-          activeBookings === null ? (
+          activeBookings === null && !normAvailableFrom && !normAvailableTo ? ( // Show loading only if calendar truly has no range info yet
             <div className="pt-2 space-y-1 text-sm text-muted-foreground">
                 Loading availability...
             </div>

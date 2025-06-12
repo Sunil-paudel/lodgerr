@@ -52,6 +52,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ message: 'Property not found.' }, { status: 404 });
     }
     
+    // Mongoose .lean() with toJSON/toObject transform in schema should handle this.
+    // The bookedDateRanges should be part of propertyDoc here if the schema is set up correctly.
+    console.log(`[API /properties/${id} GET] Fetched propertyDoc with bookedDateRanges:`, propertyDoc.bookedDateRanges);
+
+    // Transform to ensure correct client-side type, especially for dates and IDs
     const propertyResponse: PropertyType = {
         id: propertyDoc._id.toString(),
         hostId: propertyDoc.hostId.toString(),
@@ -61,11 +66,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         address: propertyDoc.address,
         price: propertyDoc.price,
         pricePeriod: propertyDoc.pricePeriod,
-        images: propertyDoc.images,
+        images: propertyDoc.images.map(img => String(img)),
         bedrooms: propertyDoc.bedrooms,
         bathrooms: propertyDoc.bathrooms,
         maxGuests: propertyDoc.maxGuests,
-        amenities: propertyDoc.amenities,
+        amenities: propertyDoc.amenities.map(am => String(am)),
         type: propertyDoc.type,
         host: { 
           name: propertyDoc.host.name,
@@ -73,9 +78,16 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         },
         rating: propertyDoc.rating,
         reviewsCount: propertyDoc.reviewsCount,
-        createdAt: propertyDoc.createdAt,
-        availableFrom: propertyDoc.availableFrom,
-        availableTo: propertyDoc.availableTo,
+        createdAt: propertyDoc.createdAt, // Assumes already Date or string convertible by client
+        availableFrom: propertyDoc.availableFrom, // Same assumption
+        availableTo: propertyDoc.availableTo, // Same assumption
+        bookedDateRanges: (propertyDoc.bookedDateRanges || []).map(range => ({
+            ...range,
+            bookingId: range.bookingId.toString(), // Ensure bookingId is a string
+            startDate: range.startDate, // Dates should be ISO strings from lean + toJSON
+            endDate: range.endDate,
+            status: range.status
+        }))
     };
 
     return NextResponse.json(propertyResponse, { status: 200 });
@@ -198,26 +210,41 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       return NextResponse.json({ message: 'Forbidden: You are not authorized to delete this property.' }, { status: 403 });
     }
 
-    // Check for active or upcoming bookings
-    const nonDeletableStatuses = ['pending_confirmation', 'pending_payment', 'confirmed_by_host'];
-    const activeBookings = await BookingModel.find({
-      listingId: propertyToDelete._id,
-      bookingStatus: { $in: nonDeletableStatuses },
-      // Optionally, filter by endDate >= today for upcoming/active
-      // endDate: { $gte: startOfDay(new Date()) } 
-    });
+    // Check for active or upcoming bookings using the property's own bookedDateRanges
+    const nonDeletableStatuses: string[] = ['pending_confirmation', 'pending_payment', 'confirmed_by_host'];
+    const hasActiveOrPendingBookingsInRanges = propertyToDelete.bookedDateRanges.some(range =>
+      nonDeletableStatuses.includes(range.status) &&
+      startOfDay(new Date(range.endDate)) >= startOfDay(new Date()) // Check if booking end date is today or in future
+    );
 
-    if (activeBookings.length > 0) {
+    if (hasActiveOrPendingBookingsInRanges) {
       return NextResponse.json({ 
-        message: 'This property cannot be deleted because it has active or upcoming bookings. Please resolve these bookings first.' 
+        message: 'This property cannot be deleted because it has active or upcoming bookings in its records. Please resolve these bookings first.' 
       }, { status: 409 }); // 409 Conflict
     }
+    
+    // Additionally, one last check on the Bookings collection as a safeguard,
+    // though property.bookedDateRanges should be the source of truth if synchronized correctly.
+    const activeBookingsInCollection = await BookingModel.find({
+      listingId: propertyToDelete._id,
+      bookingStatus: { $in: nonDeletableStatuses },
+      endDate: { $gte: startOfDay(new Date()) } 
+    });
+
+    if (activeBookingsInCollection.length > 0) {
+       console.warn(`[API /properties/${id} DELETE] Discrepancy: Property bookedDateRanges showed no active bookings, but Bookings collection found ${activeBookingsInCollection.length}. Deletion blocked.`);
+       return NextResponse.json({ 
+        message: 'This property cannot be deleted due to active or upcoming bookings found in the system (discrepancy detected). Please contact support or ensure all bookings are resolved.' 
+      }, { status: 409 });
+    }
+
 
     // Proceed with deletion
     await PropertyModel.findByIdAndDelete(id);
-    // Note: Associated bookings are not deleted here. They will become "orphaned"
-    // but can still be viewed by guests/hosts if listingId is not strictly enforced on booking display.
-    // For a full cleanup, you might also want to handle associated bookings (e.g., mark them as cancelled, notify users).
+    // Note: Associated bookings are not deleted here by default. 
+    // They will become "orphaned" if not explicitly handled.
+    // For a full cleanup, you might also want to update or delete associated bookings
+    // (e.g., mark them as 'listing_removed_by_host', notify users).
 
     return NextResponse.json({ message: 'Property deleted successfully.' }, { status: 200 });
 

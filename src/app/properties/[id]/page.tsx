@@ -9,7 +9,7 @@ import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, Home as Hom
 import { PropertyAmenityIcon } from '@/components/property/PropertyAmenityIcon';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import type { Property as PropertyType, BookingStatus } from '@/lib/types';
+import type { Property as PropertyType, BookingStatus, BookedDateRange } from '@/lib/types';
 import { PropertyBookingCalendar } from '@/components/property/PropertyBookingCalendar';
 import {
   Carousel,
@@ -26,7 +26,6 @@ import { format, isValid as isValidDate, differenceInCalendarDays, startOfDay, i
 import { Skeleton } from '@/components/ui/skeleton';
 import { loadStripe } from '@stripe/stripe-js';
 
-// **WARNING: Hardcoded Stripe Publishable Key for testing. Remove before deployment!**
 const NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = "pk_test_51RZ79aD5LRi4lJMY7NPB8uLMtw4RVctP94bSLctPHBmZmrz1qVPpJwYue3CARvQ6PiMpcHnyqUSoGgaaJZk4bogo00FEf6knF0";
 
 const stripePromise = loadStripe(NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
@@ -36,13 +35,6 @@ interface BookingPriceDetails {
   unitType: 'night' | 'week' | 'month' | 'nights' | 'weeks' | 'months';
   totalPrice: number;
 }
-
-type ActiveBookingRange = { 
-  startDate: string; 
-  endDate: string;
-  bookingStatus: BookingStatus; 
-};
-
 
 const PropertyDetailsPage = () => {
   const params = useParams();
@@ -59,25 +51,16 @@ const PropertyDetailsPage = () => {
   const [availabilityText, setAvailabilityText] = useState<string | null>(null);
   const [currentBookingPriceDetails, setCurrentBookingPriceDetails] = useState<BookingPriceDetails | null>(null);
   
-  const [activeBookings, setActiveBookings] = useState<ActiveBookingRange[] | null>(null);
-  const [isLoadingActiveBookings, setIsLoadingActiveBookings] = useState(true);
-  const [activeBookingsError, setActiveBookingsError] = useState<string | null>(null);
-
-
   useEffect(() => {
     const fetchProperty = async () => {
       if (!propertyId) {
         setPageError("Property ID is missing.");
         setIsLoading(false);
-        setIsLoadingActiveBookings(false);
         return;
       }
       setIsLoading(true);
       setPageError(null);
       setProperty(null); 
-      setActiveBookings(null); 
-      setIsLoadingActiveBookings(true);
-      setActiveBookingsError(null);
 
       try {
         console.log(`[PropertyDetailsPage] Fetching property with ID: ${propertyId}`);
@@ -87,7 +70,7 @@ const PropertyDetailsPage = () => {
           throw new Error(errorResult.message || `Failed to fetch property: ${response.statusText}`);
         }
         const data: PropertyType = await response.json();
-        console.log(`[PropertyDetailsPage] Property data fetched successfully for ID: ${propertyId}`, data);
+        console.log(`[PropertyDetailsPage] Property data fetched successfully for ID: ${propertyId}. BookedDateRanges:`, data.bookedDateRanges);
         setProperty(data);
         if (data?.title) {
           document.title = `${data.title} - Lodger`;
@@ -103,58 +86,6 @@ const PropertyDetailsPage = () => {
 
     fetchProperty();
   }, [propertyId]);
-
-  useEffect(() => {
-    if (property?.id && !isLoading) { // Fetch only if property is loaded and not currently loading
-      console.log(`[PropertyDetailsPage] Property ID ${property.id} available. Fetching active bookings.`);
-      setIsLoadingActiveBookings(true);
-      setActiveBookingsError(null); 
-      const fetchActiveBookingsForProperty = async () => {
-        try {
-          const response = await fetch(`/api/properties/${property.id}/active-bookings`);
-          if (!response.ok) {
-            let errorResponseMessage = `Failed to fetch active bookings (${response.status} ${response.statusText || ''})`;
-            let errorDetailsForConsole = "";
-            try {
-              // Try to parse the error response as JSON first
-              const errorData = await response.json();
-              if (errorData && errorData.message) {
-                errorResponseMessage = errorData.message;
-              }
-              errorDetailsForConsole = JSON.stringify(errorData);
-            } catch (jsonError) {
-              // If JSON parsing fails, try to read the response as text
-              try {
-                const errorText = await response.text();
-                errorDetailsForConsole = errorText;
-                console.warn(`[PropertyDetailsPage] Non-JSON error response body from /active-bookings for ${property.id}:`, errorText);
-                // Keep the generic errorResponseMessage or augment if specific text is useful
-              } catch (textError) {
-                console.warn(`[PropertyDetailsPage] Could not read error response body from /active-bookings for ${property.id}.`);
-              }
-            }
-            console.warn(`[PropertyDetailsPage] Failed to fetch active bookings for ${property.id}. Status: ${response.status}. Details: ${errorDetailsForConsole}`);
-            throw new Error(errorResponseMessage);
-          }
-          const data: ActiveBookingRange[] = await response.json();
-          console.log(`[PropertyDetailsPage] Active bookings data received for property ${property.id}:`, data);
-          setActiveBookings(data);
-        } catch (error: any) {
-          console.error(`[PropertyDetailsPage] Error fetching active bookings for property ${property.id}:`, error);
-          setActiveBookings(null); 
-          setActiveBookingsError(error.message || "Could not load current booking availability for this property.");
-        } finally {
-          setIsLoadingActiveBookings(false);
-        }
-      };
-      fetchActiveBookingsForProperty();
-    } else if (!isLoading && !property) {
-      console.log("[PropertyDetailsPage] No property data, skipping active bookings fetch.");
-      setIsLoadingActiveBookings(false);
-      setActiveBookings(null);
-    }
-  }, [property?.id, isLoading]); 
-
 
   useEffect(() => {
     if (property) {
@@ -272,19 +203,22 @@ const PropertyDetailsPage = () => {
             setSelectedDateRange(undefined); 
             setCurrentBookingPriceDetails(null);
             
-            if (property && property.id) {
-              setIsLoadingActiveBookings(true); 
-              const bookingsResponse = await fetch(`/api/properties/${property.id}/active-bookings`);
-              if (bookingsResponse.ok) {
-                const newActiveBookings = await bookingsResponse.json();
-                console.log(`[PropertyDetailsPage] Re-fetched active bookings after conflict:`, newActiveBookings);
-                setActiveBookings(newActiveBookings);
-              } else {
-                console.warn(`[PropertyDetailsPage] Failed to re-fetch active bookings after conflict for ${property.id}`);
-                setActiveBookingsError("Failed to update availability after booking conflict.");
-              }
-              setIsLoadingActiveBookings(false);
+            // Re-fetch property to get updated bookedDateRanges
+             if (property && property.id) {
+                console.log(`[PropertyDetailsPage] Re-fetching property ${property.id} after booking conflict.`);
+                setIsLoading(true);
+                const propResponse = await fetch(`/api/properties/${property.id}`);
+                if (propResponse.ok) {
+                    const updatedPropertyData = await propResponse.json();
+                    setProperty(updatedPropertyData);
+                    console.log(`[PropertyDetailsPage] Property ${property.id} re-fetched. New bookedDateRanges:`, updatedPropertyData.bookedDateRanges);
+                } else {
+                    console.warn(`[PropertyDetailsPage] Failed to re-fetch property ${property.id} after conflict.`);
+                    setPageError("Failed to update availability after booking conflict. Please refresh.");
+                }
+                setIsLoading(false);
             }
+
         } else {
             throw new Error(result.message || "Failed to initiate booking payment.");
         }
@@ -467,7 +401,7 @@ const PropertyDetailsPage = () => {
                 </div>
             </div>
 
-           {availabilityText === null && (isLoading || isLoadingActiveBookings) ? (
+           {availabilityText === null && isLoading ? (
                 <div className="py-6 border-b border-border">
                     <h3 className="text-xl font-semibold mb-2 font-headline flex items-center">
                         <CalendarIconLucide size={20} className="mr-2 text-primary" />
@@ -494,29 +428,32 @@ const PropertyDetailsPage = () => {
             <div className="py-6 border-b border-border">
               <h3 className="text-xl font-semibold mb-3 font-headline flex items-center">
                 <CalendarX size={20} className="mr-2 text-destructive" />
-                Currently Booked Periods
+                Currently Booked/Pending Periods
               </h3>
-              { console.log('[PropertyDetailsPage Render] About to render booked periods. isLoadingActiveBookings:', isLoadingActiveBookings, 'activeBookingsError:', activeBookingsError, 'activeBookings:', activeBookings) }
-              {isLoadingActiveBookings ? (
+              {console.log('[PropertyDetailsPage Render] BookedDateRanges from property state:', property.bookedDateRanges)}
+              {isLoading ? (
                 <div className="space-y-2">
                   <Skeleton className="h-5 w-full" />
                   <Skeleton className="h-5 w-5/6" />
                 </div>
-              ) : activeBookingsError ? (
-                <div className="flex items-center text-sm text-destructive">
-                  <AlertTriangle size={16} className="mr-2" />
-                  Error: {activeBookingsError}
-                </div>
-              ) : activeBookings && activeBookings.length > 0 ? (
+              ) : property.bookedDateRanges && property.bookedDateRanges.length > 0 ? (
                 <ul className="space-y-1 text-sm text-foreground/80 list-disc list-inside">
-                  {activeBookings.map((booking, index) => (
-                    <li key={index}>
-                      {format(parseISO(booking.startDate), 'LLL dd, yyyy')} - {format(parseISO(booking.endDate), 'LLL dd, yyyy')}
+                  {property.bookedDateRanges
+                    .filter(range => ['pending_payment', 'pending_confirmation', 'confirmed_by_host'].includes(range.status))
+                    .map((booking, index) => (
+                    <li key={booking.bookingId || index}>
+                      {format(parseISO(booking.startDate as unknown as string), 'LLL dd, yyyy')} - {format(parseISO(booking.endDate as unknown as string), 'LLL dd, yyyy')}
                       <span className="text-xs ml-2 px-1.5 py-0.5 rounded-full bg-muted-foreground/10 text-muted-foreground font-medium">
-                        {formatBookingStatusDisplay(booking.bookingStatus)}
+                        {formatBookingStatusDisplay(booking.status)}
                       </span>
                     </li>
                   ))}
+                  {property.bookedDateRanges.filter(range => ['pending_payment', 'pending_confirmation', 'confirmed_by_host'].includes(range.status)).length === 0 && (
+                     <div className="flex items-center text-sm text-muted-foreground">
+                        <Info size={16} className="mr-2 text-primary" />
+                        This property has no active or pending bookings at the moment.
+                    </div>
+                  )}
                 </ul>
               ) : (
                 <div className="flex items-center text-sm text-muted-foreground">
@@ -571,7 +508,7 @@ const PropertyDetailsPage = () => {
                   pricePeriod={property.pricePeriod} 
                   availableFrom={property.availableFrom}
                   availableTo={property.availableTo}
-                  activeBookings={activeBookings} 
+                  activeBookings={property.bookedDateRanges} 
                 />
               </div>
               
@@ -618,5 +555,3 @@ const PropertyDetailsPage = () => {
 };
 
 export default PropertyDetailsPage;
-
-    
