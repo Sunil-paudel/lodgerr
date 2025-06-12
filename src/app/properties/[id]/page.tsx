@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
-import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, Home as HomeIcon, ImageIcon, UserCircle, Calendar as CalendarIconLucide, DollarSign, Wifi, Loader2 } from 'lucide-react';
+import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, Home as HomeIcon, ImageIcon, UserCircle, Calendar as CalendarIconLucide, DollarSign, Wifi, Loader2, CheckCircle, Moon, Package, Banknote } from 'lucide-react';
 import { PropertyAmenityIcon } from '@/components/property/PropertyAmenityIcon';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -19,10 +19,10 @@ import {
   CarouselPrevious,
 } from "@/components/ui/carousel";
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import type { DateRange } from 'react-day-picker';
-import { format, isValid as isValidDate } from 'date-fns';
+import { format, isValid as isValidDate, differenceInCalendarDays, startOfDay } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { loadStripe } from '@stripe/stripe-js';
 
@@ -30,6 +30,12 @@ import { loadStripe } from '@stripe/stripe-js';
 const NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = "pk_test_51RZ79aD5LRi4lJMY7NPB8uLMtw4RVctP94bSLctPHBmZmrz1qVPpJwYue3CARvQ6PiMpcHnyqUSoGgaaJZk4bogo00FEf6knF0";
 
 const stripePromise = loadStripe(NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+
+interface BookingPriceDetails {
+  numberOfUnits: number;
+  unitType: 'night' | 'week' | 'month' | 'nights' | 'weeks' | 'months';
+  totalPrice: number;
+}
 
 
 const PropertyDetailsPage = () => {
@@ -45,6 +51,7 @@ const PropertyDetailsPage = () => {
   const [isBookingLoading, setIsBookingLoading] = useState(false);
   const [selectedDateRange, setSelectedDateRange] = useState<DateRange | undefined>(undefined);
   const [availabilityText, setAvailabilityText] = useState<string | null>(null);
+  const [currentBookingPriceDetails, setCurrentBookingPriceDetails] = useState<BookingPriceDetails | null>(null);
 
 
   useEffect(() => {
@@ -90,13 +97,67 @@ const PropertyDetailsPage = () => {
       } else if (toDate) {
           text = `Available until ${format(toDate, 'LLL dd, yyyy')}`;
       } else {
-          text = "This property is generally available. Check calendar for specific dates."
+          // This state is now handled by hiding the availabilityText section if no dates are set.
+          // text = "This property is generally available. Check calendar for specific dates."
+          text = ""; // Set to empty or null if no specific availability message is needed
       }
-      setAvailabilityText(text); 
+      setAvailabilityText(text || null); 
     } else {
       setAvailabilityText(null);
     }
   }, [property]);
+
+  useEffect(() => {
+    if (property && selectedDateRange?.from && selectedDateRange?.to) {
+      const from = startOfDay(selectedDateRange.from);
+      const to = startOfDay(selectedDateRange.to);
+
+      if (isBefore(to, from)) {
+        setCurrentBookingPriceDetails(null);
+        return;
+      }
+
+      let numberOfUnits = 0;
+      let unitType: BookingPriceDetails['unitType'] = 'nights';
+
+      if (property.pricePeriod === 'nightly') {
+        numberOfUnits = differenceInCalendarDays(to, from);
+        if (numberOfUnits === 0 && from.getTime() === to.getTime()) { // Same day in/out for nightly
+            numberOfUnits = 1; // Or your business rule for min 1 night
+        }
+        unitType = numberOfUnits === 1 ? 'night' : 'nights';
+      } else if (property.pricePeriod === 'weekly') {
+        numberOfUnits = Math.max(1, Math.ceil(differenceInCalendarDays(to, from) / 7));
+        unitType = numberOfUnits === 1 ? 'week' : 'weeks';
+      } else if (property.pricePeriod === 'monthly') {
+        numberOfUnits = Math.max(1, Math.ceil(differenceInCalendarDays(to, from) / 30));
+        unitType = numberOfUnits === 1 ? 'month' : 'months';
+      }
+      
+      if (numberOfUnits > 0) {
+        setCurrentBookingPriceDetails({
+          numberOfUnits,
+          unitType,
+          totalPrice: property.price * numberOfUnits,
+        });
+      } else {
+         // This case might occur if diff is 0 for weekly/monthly, handle as min 1 unit
+         if (property.pricePeriod !== 'nightly' && differenceInCalendarDays(to, from) <= 0) {
+            numberOfUnits = 1; // Minimum 1 unit for weekly/monthly
+            unitType = property.pricePeriod === 'weekly' ? 'week' : 'month';
+             setCurrentBookingPriceDetails({
+                numberOfUnits,
+                unitType,
+                totalPrice: property.price * numberOfUnits,
+            });
+         } else {
+            setCurrentBookingPriceDetails(null);
+         }
+      }
+    } else {
+      setCurrentBookingPriceDetails(null);
+    }
+  }, [selectedDateRange, property]);
 
 
   const handleReserve = async () => {
@@ -155,12 +216,8 @@ const PropertyDetailsPage = () => {
         description: error.message || "An unexpected error occurred.",
         variant: "destructive",
       });
-      // Set loading to false only if an error occurs *before* redirect or if redirect fails
       setIsBookingLoading(false);
     } 
-    // No finally block for setIsBookingLoading(false) here,
-    // because successful redirection means the component unmounts or user navigates away.
-    // It's set to false in the catch block.
   };
 
 
@@ -318,18 +375,13 @@ const PropertyDetailsPage = () => {
                     <Skeleton className="h-5 w-3/4 my-1" />
                     <Skeleton className="h-4 w-full mt-1" />
                 </div>
-            ) : availabilityText ? (
+            ) : availabilityText ? ( // Only render if there is text
               <div className="py-6 border-b border-border">
                 <h3 className="text-xl font-semibold mb-2 font-headline flex items-center">
                   <CalendarIconLucide size={20} className="mr-2 text-primary" />
                   Host-Defined Availability
                 </h3>
                 <p className="text-foreground/90">{availabilityText}</p>
-                 { !(property.availableFrom || property.availableTo) && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                        Specific dates can be selected using the calendar below.
-                    </p>
-                 )}
                  { (property.availableFrom || property.availableTo) && (
                     <p className="text-xs text-muted-foreground mt-1">
                         Note: Specific dates within this period might already be booked. Please check the calendar below.
@@ -361,11 +413,13 @@ const PropertyDetailsPage = () => {
 
           <div className="lg:col-span-1">
             <div className="sticky top-24 p-6 border border-border rounded-lg shadow-xl bg-card">
-              <p className="text-2xl font-bold mb-1">
-                <DollarSign className="inline h-6 w-6 mr-1 relative -top-0.5" />
-                {property.price}{' '}
-                <span className="text-base font-normal text-muted-foreground">{getPricePeriodText(property.pricePeriod)}</span>
-              </p>
+              <div className="flex justify-between items-baseline mb-1">
+                <p className="text-2xl font-bold">
+                    <DollarSign className="inline h-6 w-6 mr-1 relative -top-0.5" />
+                    {property.price}
+                </p>
+                <span className="text-sm font-normal text-muted-foreground">{getPricePeriodText(property.pricePeriod)}</span>
+              </div>
               {property.rating !== undefined && property.rating !== null && (
                 <div className="flex items-center text-sm text-muted-foreground mb-4">
                     <Star size={16} className="mr-1 text-amber-500 fill-current" />
@@ -377,18 +431,37 @@ const PropertyDetailsPage = () => {
                 <PropertyBookingCalendar 
                   selectedRange={selectedDateRange}
                   onDateChange={setSelectedDateRange}
-                  price={property.price}
-                  pricePeriod={property.pricePeriod}
+                  price={property.price} // Pass base price
+                  pricePeriod={property.pricePeriod} // Pass price period
                   availableFrom={property.availableFrom}
                   availableTo={property.availableTo}
                 />
               </div>
+              
+              {currentBookingPriceDetails && (
+                <div className="mb-4 p-3 border rounded-md bg-muted/50">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">
+                      ${property.price} x {currentBookingPriceDetails.numberOfUnits} {currentBookingPriceDetails.unitType}
+                    </span>
+                    <span className="font-semibold">
+                      ${(property.price * currentBookingPriceDetails.numberOfUnits).toFixed(2)}
+                    </span>
+                  </div>
+                  {/* You could add service fees or taxes here if needed */}
+                  <div className="flex justify-between items-center text-base font-bold mt-2 pt-2 border-t">
+                    <span>Total</span>
+                    <span>${currentBookingPriceDetails.totalPrice.toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+
 
               <Button 
                 size="lg" 
                 className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
                 onClick={handleReserve}
-                disabled={isBookingLoading || !selectedDateRange?.from || !selectedDateRange?.to || !NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
+                disabled={isBookingLoading || !selectedDateRange?.from || !selectedDateRange?.to || !NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || !currentBookingPriceDetails}
               >
                 {isBookingLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {isBookingLoading ? "Processing..." : "Reserve & Pay"}
@@ -409,3 +482,5 @@ const PropertyDetailsPage = () => {
 };
 
 export default PropertyDetailsPage;
+
+    
