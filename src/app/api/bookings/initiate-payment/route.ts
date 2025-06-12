@@ -6,13 +6,14 @@ import { getServerSession } from 'next-auth/next';
 import Stripe from 'stripe';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import connectDB from '@/utils/db';
-import Booking from '@/models/Booking';
+import Booking, { type BookingDocument } from '@/models/Booking';
 import PropertyModel, { type PropertyDocument } from '@/models/Property';
 import UserModel, { type IUser } from '@/models/User';
 import * as z from 'zod';
 import { differenceInCalendarDays, startOfDay, format } from 'date-fns';
 import { sendEmail } from '@/utils/mailer';
 import mongoose from 'mongoose';
+import type { BookingStatus } from '@/lib/types';
 
 const STRIPE_SECRET_KEY = "sk_test_51RZ79aD5LRi4lJMY7yYuDQ8aRlBJPpAqdHdYhHOZvcSWSgJWvSzQVM3sACZJzcdWo1VHKdnZKVxxkzZJWgVYb5fz00TC8f8KKK";
 const stripe = new Stripe(STRIPE_SECRET_KEY!, {
@@ -86,7 +87,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'These dates are no longer available for this property. Please choose different dates.' }, { status: 409 });
     }
 
-    // Check for conflicts in property.bookedDateRanges as well
     if (property.bookedDateRanges) {
         const conflictingRange = property.bookedDateRanges.find(range => {
             const rangeStart = startOfDay(new Date(range.startDate));
@@ -127,35 +127,48 @@ export async function POST(request: NextRequest) {
       totalPrice,
       paymentStatus: 'pending',
       bookingStatus: 'pending_payment',
-    });
+    }) as BookingDocument; // Cast to ensure type
     await newBooking.save();
     console.log("[API /bookings/initiate-payment POST] New pending_payment booking created:", newBooking._id.toString());
 
+    // Critical: Add the booking range to the Property document
+    console.log(`[API /bookings/initiate-payment POST] Attempting to add bookedDateRange to Property ID: ${propertyId} for Booking ID: ${newBooking._id.toString()}`);
+    const rangeToAdd = {
+        bookingId: newBooking._id, // This is an ObjectId
+        startDate: newBooking.startDate,
+        endDate: newBooking.endDate,
+        status: newBooking.bookingStatus as BookingStatus, // Ensure type compatibility
+    };
+    console.log(`[API /bookings/initiate-payment POST] Range to add:`, JSON.stringify(rangeToAdd, null, 2));
+    
     const updatedProperty = await PropertyModel.findByIdAndUpdate(
         propertyId,
         {
             $push: {
-                bookedDateRanges: {
-                    bookingId: newBooking._id,
-                    startDate: newBooking.startDate,
-                    endDate: newBooking.endDate,
-                    status: newBooking.bookingStatus,
-                }
+                bookedDateRanges: rangeToAdd
             }
         },
-        { new: true }
+        { new: true, runValidators: true } 
     ) as PropertyDocument | null;
 
     if (!updatedProperty) {
-        console.error(`[API /bookings/initiate-payment POST] Property ${propertyId} not found after attempting to update bookedDateRanges for booking ${newBooking._id.toString()}. This is critical!`);
+        console.error(`[API /bookings/initiate-payment POST] CRITICAL: Property ${propertyId} not found or update failed when trying to add bookedDateRange for booking ${newBooking._id.toString()}. This will lead to data inconsistency.`);
         await Booking.findByIdAndDelete(newBooking._id);
-        return NextResponse.json({ message: 'Property update failed after booking creation.' }, { status: 500 });
+        console.warn(`[API /bookings/initiate-payment POST] Deleted orphaned booking ${newBooking._id.toString()} due to property update failure.`);
+        return NextResponse.json({ message: 'Property update failed after booking creation. Booking cancelled.' }, { status: 500 });
+    } else {
+        console.log(`[API /bookings/initiate-payment POST] Property ${updatedProperty.id} successfully updated. Checking bookedDateRanges...`);
+        // Ensure conversion to plain objects for reliable logging of subdocuments
+        const rangesInUpdatedProperty = updatedProperty.bookedDateRanges ? updatedProperty.bookedDateRanges.map(r => r.toObject ? r.toObject() : r) : [];
+        console.log(`[API /bookings/initiate-payment POST] Property ${updatedProperty.id} bookedDateRanges after update (${rangesInUpdatedProperty.length} ranges):`, JSON.stringify(rangesInUpdatedProperty, null, 2));
+        
+        const justAddedRange = rangesInUpdatedProperty.find(r => r.bookingId.toString() === newBooking._id.toString());
+        if (justAddedRange) {
+            console.log(`[API /bookings/initiate-payment POST] Successfully verified that booking ${newBooking._id.toString()} was added to property's bookedDateRanges.`);
+        } else {
+            console.error(`[API /bookings/initiate-payment POST] CRITICAL: Booking ${newBooking._id.toString()} was NOT found in property's bookedDateRanges after update, despite property update seemingly succeeding. Current ranges:`, JSON.stringify(rangesInUpdatedProperty, null, 2));
+        }
     }
-    console.log(`[API /bookings/initiate-payment POST] Added pending booking ${newBooking._id.toString()} to property ${updatedProperty.id} bookedDateRanges.`);
-    // Enhanced logging:
-    const rangesInUpdatedProperty = updatedProperty.bookedDateRanges ? updatedProperty.bookedDateRanges.map(r => r.toObject()) : [];
-    console.log(`[API /bookings/initiate-payment POST] Property ${updatedProperty.id} bookedDateRanges after update (${rangesInUpdatedProperty.length} ranges):`, JSON.stringify(rangesInUpdatedProperty, null, 2));
-
 
     const appUrl = APP_URL;
 
@@ -244,3 +257,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: errorMessage, errorDetails: error.toString() }, { status: 500 });
   }
 }
+
+    
