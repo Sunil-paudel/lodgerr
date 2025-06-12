@@ -66,11 +66,23 @@ const PropertyDetailsPage = () => {
         console.log(`[PropertyDetailsPage] Fetching property with ID: ${propertyId}`);
         const response = await fetch(`/api/properties/${propertyId}`);
         if (!response.ok) {
-          const errorResult = await response.json();
-          throw new Error(errorResult.message || `Failed to fetch property: ${response.statusText}`);
+          let errorBodyText = "Could not parse error response.";
+          try {
+            const errorResult = await response.json();
+            errorBodyText = errorResult.message || JSON.stringify(errorResult);
+          } catch (e) {
+            // If parsing as JSON fails, try to read as text
+             try {
+                errorBodyText = await response.text();
+            } catch (textErr) {
+                errorBodyText = `Failed to read error response body. Status: ${response.status}`;
+            }
+          }
+          console.warn(`[PropertyDetailsPage] Failed to fetch property ${propertyId}: ${response.status}`, errorBodyText);
+          throw new Error(`Failed to fetch property data (${response.status}). Details: ${errorBodyText}`);
         }
         const data: PropertyType = await response.json();
-        console.log(`[PropertyDetailsPage] Property data fetched successfully for ID: ${propertyId}. BookedDateRanges:`, data.bookedDateRanges);
+        console.log(`[PropertyDetailsPage] Property data fetched successfully for ID: ${propertyId}. BookedDateRanges received:`, data.bookedDateRanges);
         setProperty(data);
         if (data?.title) {
           document.title = `${data.title} - Lodger`;
@@ -206,7 +218,7 @@ const PropertyDetailsPage = () => {
             // Re-fetch property to get updated bookedDateRanges
              if (property && property.id) {
                 console.log(`[PropertyDetailsPage] Re-fetching property ${property.id} after booking conflict.`);
-                setIsLoading(true);
+                setIsLoading(true); // Use main loading indicator
                 const propResponse = await fetch(`/api/properties/${property.id}`);
                 if (propResponse.ok) {
                     const updatedPropertyData = await propResponse.json();
@@ -316,6 +328,13 @@ const PropertyDetailsPage = () => {
   };
 
   const hasImages = property.images && property.images.length > 0;
+
+  if (property && property.bookedDateRanges) {
+    console.log(`[PropertyDetailsPage Render] Using property.bookedDateRanges for display:`, JSON.stringify(property.bookedDateRanges, null, 2));
+  } else if (property) {
+    console.log(`[PropertyDetailsPage Render] property.bookedDateRanges is undefined or empty.`);
+  }
+
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -430,13 +449,12 @@ const PropertyDetailsPage = () => {
                 <CalendarX size={20} className="mr-2 text-destructive" />
                 Currently Booked/Pending Periods
               </h3>
-              {console.log('[PropertyDetailsPage Render] BookedDateRanges from property state:', property.bookedDateRanges)}
               {isLoading ? (
                 <div className="space-y-2">
                   <Skeleton className="h-5 w-full" />
                   <Skeleton className="h-5 w-5/6" />
                 </div>
-              ) : property.bookedDateRanges && property.bookedDateRanges.length > 0 ? (
+              ) : property.bookedDateRanges && property.bookedDateRanges.length > 0 && property.bookedDateRanges.filter(range => ['pending_payment', 'pending_confirmation', 'confirmed_by_host'].includes(range.status)).length > 0 ? (
                 <ul className="space-y-1 text-sm text-foreground/80 list-disc list-inside">
                   {property.bookedDateRanges
                     .filter(range => ['pending_payment', 'pending_confirmation', 'confirmed_by_host'].includes(range.status))
@@ -448,15 +466,9 @@ const PropertyDetailsPage = () => {
                       </span>
                     </li>
                   ))}
-                  {property.bookedDateRanges.filter(range => ['pending_payment', 'pending_confirmation', 'confirmed_by_host'].includes(range.status)).length === 0 && (
-                     <div className="flex items-center text-sm text-muted-foreground">
-                        <Info size={16} className="mr-2 text-primary" />
-                        This property has no active or pending bookings at the moment.
-                    </div>
-                  )}
                 </ul>
               ) : (
-                <div className="flex items-center text-sm text-muted-foreground">
+                 <div className="flex items-center text-sm text-muted-foreground">
                     <Info size={16} className="mr-2 text-primary" />
                     This property has no active or pending bookings at the moment.
                 </div>
@@ -555,3 +567,4 @@ const PropertyDetailsPage = () => {
 };
 
 export default PropertyDetailsPage;
+
