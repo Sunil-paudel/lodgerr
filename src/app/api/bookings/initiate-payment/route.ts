@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
 
     // Add to property's bookedDateRanges
     // Re-fetch property to ensure atomicity or use $push with findByIdAndUpdate
-    property = await PropertyModel.findByIdAndUpdate(
+    const updatedProperty = await PropertyModel.findByIdAndUpdate(
         propertyId,
         { 
             $push: { 
@@ -148,13 +148,14 @@ export async function POST(request: NextRequest) {
         { new: true } // Return the updated document
     ) as PropertyDocument | null;
 
-    if (!property) {
+    if (!updatedProperty) {
         console.error(`[API /bookings/initiate-payment POST] Property ${propertyId} not found after attempting to update bookedDateRanges for booking ${newBooking._id.toString()}. This is critical!`);
-        // Rollback booking creation or handle error appropriately
         await Booking.findByIdAndDelete(newBooking._id);
         return NextResponse.json({ message: 'Property update failed after booking creation.' }, { status: 500 });
     }
-    console.log(`[API /bookings/initiate-payment POST] Added pending booking ${newBooking._id.toString()} to property ${property.id} bookedDateRanges.`);
+    console.log(`[API /bookings/initiate-payment POST] Added pending booking ${newBooking._id.toString()} to property ${updatedProperty.id} bookedDateRanges.`);
+    // **** ADDED LOGGING HERE ****
+    console.log(`[API /bookings/initiate-payment POST] Property ${updatedProperty.id} bookedDateRanges after update:`, JSON.stringify(updatedProperty.bookedDateRanges, null, 2));
         
     const appUrl = APP_URL; 
     
@@ -165,9 +166,9 @@ export async function POST(request: NextRequest) {
           price_data: {
             currency: 'usd', 
             product_data: {
-              name: `${property.title} (Booking: ${newBooking._id.toString()})`,
+              name: `${updatedProperty.title} (Booking: ${newBooking._id.toString()})`,
               description: `Stay from ${format(normalizedStartDate, 'MMM dd, yyyy')} to ${format(normalizedEndDate, 'MMM dd, yyyy')}. Property ID: ${propertyId}`,
-              images: property.images && property.images.length > 0 ? [property.images[0]] : undefined,
+              images: updatedProperty.images && updatedProperty.images.length > 0 ? [updatedProperty.images[0]] : undefined,
             },
             unit_amount: Math.round(totalPrice * 100), 
           },
@@ -190,7 +191,6 @@ export async function POST(request: NextRequest) {
         console.warn("[API /bookings/initiate-payment POST] Stripe session creation failed. Deleting temporary booking:", newBooking._id.toString());
         await Booking.findByIdAndDelete(newBooking._id);
         
-        // Attempt to remove from property's bookedDateRanges
         await PropertyModel.findByIdAndUpdate(propertyId, {
             $pull: { bookedDateRanges: { bookingId: newBooking._id } }
         }).catch(err => console.error(`[API /bookings/initiate-payment POST] Failed to clean property bookedDateRanges after Stripe failure for booking ${newBooking._id.toString()}:`, err));
@@ -204,9 +204,9 @@ export async function POST(request: NextRequest) {
 
     const guestEmailResult = await sendEmail({
       to: guestEmail,
-      subject: `Your Booking for ${property.title} is Pending Payment`,
-      text: `Hi ${guestName},\n\nYour booking request for "${property.title}" from ${formattedStartDateString} to ${formattedEndDateString} for a total of $${totalPrice.toFixed(2)} is currently pending payment.\n\nYour booking is not confirmed until payment is successfully completed. You should have been redirected to Stripe to finalize your payment. If not, please check your browser or contact support.\n\nBooking ID: ${newBooking._id.toString()}\n\nThank you,\nThe Lodger Team`,
-      html: `<p>Hi ${guestName},</p><p>Your booking request for <strong>"${property.title}"</strong> from <strong>${formattedStartDateString}</strong> to <strong>${formattedEndDateString}</strong> for a total of <strong>$${totalPrice.toFixed(2)}</strong> is currently pending payment.</p><p>Your booking is not confirmed until payment is successfully completed. You should have been redirected to Stripe to finalize your payment. If not, please check your browser or contact support.</p><p>Booking ID: ${newBooking._id.toString()}</p><p>Thank you,<br/>The Lodger Team</p>`,
+      subject: `Your Booking for ${updatedProperty.title} is Pending Payment`,
+      text: `Hi ${guestName},\n\nYour booking request for "${updatedProperty.title}" from ${formattedStartDateString} to ${formattedEndDateString} for a total of $${totalPrice.toFixed(2)} is currently pending payment.\n\nYour booking is not confirmed until payment is successfully completed. You should have been redirected to Stripe to finalize your payment. If not, please check your browser or contact support.\n\nBooking ID: ${newBooking._id.toString()}\n\nThank you,\nThe Lodger Team`,
+      html: `<p>Hi ${guestName},</p><p>Your booking request for <strong>"${updatedProperty.title}"</strong> from <strong>${formattedStartDateString}</strong> to <strong>${formattedEndDateString}</strong> for a total of <strong>$${totalPrice.toFixed(2)}</strong> is currently pending payment.</p><p>Your booking is not confirmed until payment is successfully completed. You should have been redirected to Stripe to finalize your payment. If not, please check your browser or contact support.</p><p>Booking ID: ${newBooking._id.toString()}</p><p>Thank you,<br/>The Lodger Team</p>`,
     });
     if (guestEmailResult.success) {
       console.log(`[API /bookings/initiate-payment POST] Pending payment email sent to guest ${guestEmail} for booking ${newBooking._id.toString()}`);
@@ -214,13 +214,13 @@ export async function POST(request: NextRequest) {
       console.warn(`[API /bookings/initiate-payment POST] Failed to send pending payment email to guest ${guestEmail} for booking ${newBooking._id.toString()}. Error: ${guestEmailResult.error}`);
     }
 
-    const hostUser = await UserModel.findById(property.hostId).lean() as IUser | null;
+    const hostUser = await UserModel.findById(updatedProperty.hostId).lean() as IUser | null;
     if (hostUser && hostUser.email) {
       const hostEmailResult = await sendEmail({
         to: hostUser.email,
-        subject: `Action Required: Booking Request (Pending Payment) for ${property.title}`,
-        text: `Hi ${hostUser.name || 'Host'},\n\nA guest (${guestName}, ${guestEmail}) has initiated a booking for your property "${property.title}" for the dates ${formattedStartDateString} to ${formattedEndDateString}.\n\nThe booking is currently pending payment by the guest. No action is required from you at this moment. You will be notified once the payment is confirmed and the booking status changes.\n\nBooking ID: ${newBooking._id.toString()}\nProperty ID: ${property.id}\n\nRegards,\nThe Lodger Team`,
-        html: `<p>Hi ${hostUser.name || 'Host'},</p><p>A guest (<strong>${guestName}</strong>, ${guestEmail}) has initiated a booking for your property "<strong>${property.title}</strong>" for the dates <strong>${formattedStartDateString}</strong> to <strong>${formattedEndDateString}</strong>.</p><p>The booking is currently pending payment by the guest. No action is required from you at this moment. You will be notified once the payment is confirmed and the booking status changes.</p><p>Booking ID: ${newBooking._id.toString()}<br/>Property ID: ${property.id}</p><p>Regards,<br/>The Lodger Team</p>`,
+        subject: `Action Required: Booking Request (Pending Payment) for ${updatedProperty.title}`,
+        text: `Hi ${hostUser.name || 'Host'},\n\nA guest (${guestName}, ${guestEmail}) has initiated a booking for your property "${updatedProperty.title}" for the dates ${formattedStartDateString} to ${formattedEndDateString}.\n\nThe booking is currently pending payment by the guest. No action is required from you at this moment. You will be notified once the payment is confirmed and the booking status changes.\n\nBooking ID: ${newBooking._id.toString()}\nProperty ID: ${updatedProperty.id}\n\nRegards,\nThe Lodger Team`,
+        html: `<p>Hi ${hostUser.name || 'Host'},</p><p>A guest (<strong>${guestName}</strong>, ${guestEmail}) has initiated a booking for your property "<strong>${updatedProperty.title}</strong>" for the dates <strong>${formattedStartDateString}</strong> to <strong>${formattedEndDateString}</strong>.</p><p>The booking is currently pending payment by the guest. No action is required from you at this moment. You will be notified once the payment is confirmed and the booking status changes.</p><p>Booking ID: ${newBooking._id.toString()}<br/>Property ID: ${updatedProperty.id}</p><p>Regards,<br/>The Lodger Team</p>`,
       });
        if (hostEmailResult.success) {
         console.log(`[API /bookings/initiate-payment POST] Pending payment notification sent to host ${hostUser.email} for booking ${newBooking._id.toString()}`);
@@ -228,7 +228,7 @@ export async function POST(request: NextRequest) {
         console.warn(`[API /bookings/initiate-payment POST] Failed to send pending payment notification to host ${hostUser.email} for booking ${newBooking._id.toString()}. Error: ${hostEmailResult.error}`);
       }
     } else {
-      console.warn(`[API /bookings/initiate-payment POST] Could not find host email for property ${property.id} to send pending payment notification. Host ID: ${property.hostId}`);
+      console.warn(`[API /bookings/initiate-payment POST] Could not find host email for property ${updatedProperty.id} to send pending payment notification. Host ID: ${updatedProperty.hostId}`);
     }
 
     return NextResponse.json({ sessionId: stripeSession.id }, { status: 200 });
@@ -244,3 +244,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: errorMessage, errorDetails: error.toString() }, { status: 500 });
   }
 }
+
+    
