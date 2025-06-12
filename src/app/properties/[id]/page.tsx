@@ -22,7 +22,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import type { DateRange } from 'react-day-picker';
-import { format, isValid as isValidDate, differenceInCalendarDays, startOfDay } from 'date-fns';
+import { format, isValid as isValidDate, differenceInCalendarDays, startOfDay, isBefore } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { loadStripe } from '@stripe/stripe-js';
 
@@ -97,9 +97,7 @@ const PropertyDetailsPage = () => {
       } else if (toDate) {
           text = `Available until ${format(toDate, 'LLL dd, yyyy')}`;
       } else {
-          // This state is now handled by hiding the availabilityText section if no dates are set.
-          // text = "This property is generally available. Check calendar for specific dates."
-          text = ""; // Set to empty or null if no specific availability message is needed
+          text = ""; 
       }
       setAvailabilityText(text || null); 
     } else {
@@ -122,8 +120,8 @@ const PropertyDetailsPage = () => {
 
       if (property.pricePeriod === 'nightly') {
         numberOfUnits = differenceInCalendarDays(to, from);
-        if (numberOfUnits === 0 && from.getTime() === to.getTime()) { // Same day in/out for nightly
-            numberOfUnits = 1; // Or your business rule for min 1 night
+        if (numberOfUnits === 0 && from.getTime() === to.getTime()) { 
+            numberOfUnits = 1; 
         }
         unitType = numberOfUnits === 1 ? 'night' : 'nights';
       } else if (property.pricePeriod === 'weekly') {
@@ -141,9 +139,8 @@ const PropertyDetailsPage = () => {
           totalPrice: property.price * numberOfUnits,
         });
       } else {
-         // This case might occur if diff is 0 for weekly/monthly, handle as min 1 unit
          if (property.pricePeriod !== 'nightly' && differenceInCalendarDays(to, from) <= 0) {
-            numberOfUnits = 1; // Minimum 1 unit for weekly/monthly
+            numberOfUnits = 1; 
             unitType = property.pricePeriod === 'weekly' ? 'week' : 'month';
              setCurrentBookingPriceDetails({
                 numberOfUnits,
@@ -375,7 +372,7 @@ const PropertyDetailsPage = () => {
                     <Skeleton className="h-5 w-3/4 my-1" />
                     <Skeleton className="h-4 w-full mt-1" />
                 </div>
-            ) : availabilityText ? ( // Only render if there is text
+            ) : availabilityText ? ( 
               <div className="py-6 border-b border-border">
                 <h3 className="text-xl font-semibold mb-2 font-headline flex items-center">
                   <CalendarIconLucide size={20} className="mr-2 text-primary" />
@@ -431,8 +428,8 @@ const PropertyDetailsPage = () => {
                 <PropertyBookingCalendar 
                   selectedRange={selectedDateRange}
                   onDateChange={setSelectedDateRange}
-                  price={property.price} // Pass base price
-                  pricePeriod={property.pricePeriod} // Pass price period
+                  price={property.price} 
+                  pricePeriod={property.pricePeriod} 
                   availableFrom={property.availableFrom}
                   availableTo={property.availableTo}
                 />
@@ -448,7 +445,6 @@ const PropertyDetailsPage = () => {
                       ${(property.price * currentBookingPriceDetails.numberOfUnits).toFixed(2)}
                     </span>
                   </div>
-                  {/* You could add service fees or taxes here if needed */}
                   <div className="flex justify-between items-center text-base font-bold mt-2 pt-2 border-t">
                     <span>Total</span>
                     <span>${currentBookingPriceDetails.totalPrice.toFixed(2)}</span>
@@ -482,5 +478,3 @@ const PropertyDetailsPage = () => {
 };
 
 export default PropertyDetailsPage;
-
-    
