@@ -44,6 +44,9 @@ export async function POST(request: NextRequest) {
     }
 
     const { propertyId, startDate, endDate } = parsedBody.data;
+    const normalizedStartDate = startOfDay(startDate);
+    const normalizedEndDate = startOfDay(endDate);
+
 
     await connectDB();
 
@@ -52,28 +55,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'Property not found.' }, { status: 404 });
     }
 
+    if (property.hostId.toString() === guestId) {
+        return NextResponse.json({ message: 'Hosts cannot book their own properties.' }, { status: 403 });
+    }
+
     // Basic conflict check with property's general availability window
-    if (property.availableFrom && startDate < startOfDay(new Date(property.availableFrom))) {
+    if (property.availableFrom && normalizedStartDate < startOfDay(new Date(property.availableFrom))) {
         return NextResponse.json({ message: 'Booking start date is before property availability window.' }, { status: 400 });
     }
-    if (property.availableTo && endDate > startOfDay(new Date(property.availableTo))) {
+    if (property.availableTo && normalizedEndDate > startOfDay(new Date(property.availableTo))) {
         return NextResponse.json({ message: 'Booking end date is after property availability window.' }, { status: 400 });
     }
     
-    // TODO: Advanced conflict detection - check if these dates overlap with existing CONFIRMED bookings.
+    // Advanced conflict detection: Check against existing confirmed/pending bookings
+    const conflictingBooking = await Booking.findOne({
+      listingId: propertyId,
+      bookingStatus: { $in: ['confirmed_by_host', 'pending_confirmation'] }, // Check against confirmed or pending confirmation bookings
+      // Check for date overlap:
+      // (ExistingBooking.startDate < NewBooking.endDate) AND (ExistingBooking.endDate > NewBooking.startDate)
+      startDate: { $lt: normalizedEndDate },
+      endDate: { $gt: normalizedStartDate },
+    });
+
+    if (conflictingBooking) {
+      return NextResponse.json({ message: 'These dates are no longer available for this property. Please choose different dates.' }, { status: 409 }); // 409 Conflict
+    }
 
     let numberOfUnits = 0;
     if (property.pricePeriod === 'nightly') {
-      numberOfUnits = differenceInCalendarDays(endDate, startDate);
+      numberOfUnits = differenceInCalendarDays(normalizedEndDate, normalizedStartDate);
     } else if (property.pricePeriod === 'weekly') {
-      numberOfUnits = Math.ceil(differenceInCalendarDays(endDate, startDate) / 7);
+      numberOfUnits = Math.ceil(differenceInCalendarDays(normalizedEndDate, normalizedStartDate) / 7);
     } else if (property.pricePeriod === 'monthly') {
-      numberOfUnits = Math.ceil(differenceInCalendarDays(endDate, startDate) / 30);
+      numberOfUnits = Math.ceil(differenceInCalendarDays(normalizedEndDate, normalizedStartDate) / 30);
     }
-     if (numberOfUnits <= 0 && !(property.pricePeriod === 'nightly' && differenceInCalendarDays(endDate, startDate) === 0) ) {
+     if (numberOfUnits <= 0 && !(property.pricePeriod === 'nightly' && differenceInCalendarDays(normalizedEndDate, normalizedStartDate) === 0) ) {
         return NextResponse.json({ message: 'Booking duration is invalid for the selected price period.' }, { status: 400 });
     }
-    if (property.pricePeriod === 'nightly' && numberOfUnits === 0 && differenceInCalendarDays(endDate, startDate) === 0) {
+    if (property.pricePeriod === 'nightly' && numberOfUnits === 0 && differenceInCalendarDays(normalizedEndDate, normalizedStartDate) === 0) {
         numberOfUnits = 1; 
     }
     const totalPrice = property.price * Math.max(numberOfUnits, 1);
@@ -82,11 +101,11 @@ export async function POST(request: NextRequest) {
     const newBooking = new Booking({
       listingId: propertyId,
       guestId,
-      startDate: startOfDay(startDate),
-      endDate: startOfDay(endDate),
+      startDate: normalizedStartDate,
+      endDate: normalizedEndDate,
       totalPrice,
       paymentStatus: 'pending',
-      bookingStatus: 'pending_payment', // New status
+      bookingStatus: 'pending_payment', 
     });
     await newBooking.save();
 
@@ -98,32 +117,31 @@ export async function POST(request: NextRequest) {
       line_items: [
         {
           price_data: {
-            currency: 'usd', // Make this configurable if needed
+            currency: 'usd', 
             product_data: {
-              name: property.title,
+              name: `${property.title} (Booking: ${newBooking._id.toString()})`,
+              description: `Stay from ${format(normalizedStartDate, 'MMM dd, yyyy')} to ${format(normalizedEndDate, 'MMM dd, yyyy')}`,
               images: property.images && property.images.length > 0 ? [property.images[0]] : undefined,
             },
-            unit_amount: Math.round(totalPrice * 100), // Amount in cents
+            unit_amount: Math.round(totalPrice * 100), 
           },
           quantity: 1,
         },
       ],
       mode: 'payment',
       success_url: `${appUrl}/booking/success?session_id={CHECKOUT_SESSION_ID}&booking_id=${newBooking._id.toString()}`,
-      cancel_url: `${appUrl}/booking/cancel?booking_id=${newBooking._id.toString()}`,
-      client_reference_id: newBooking._id.toString(), // Our internal booking ID
+      cancel_url: `${appUrl}/booking/cancel?booking_id=${newBooking._id.toString()}&property_id=${propertyId}`,
+      client_reference_id: newBooking._id.toString(), 
       metadata: {
         bookingId: newBooking._id.toString(),
         propertyId: propertyId,
         guestId: guestId,
-      }
+      },
+      customer_email: session.user.email, // Pre-fill customer email
     });
 
     if (!stripeSession.id) {
-        // If session creation fails, we might want to roll back our booking or mark it as failed.
-        // For now, log and return an error.
-        console.error("Stripe session creation failed for booking:", newBooking._id);
-        await Booking.findByIdAndDelete(newBooking._id); // Simple rollback
+        await Booking.findByIdAndDelete(newBooking._id); 
         return NextResponse.json({ message: 'Failed to initiate payment session with provider.' }, { status: 500 });
     }
 
@@ -140,3 +158,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: errorMessage, errorDetails: error.toString() }, { status: 500 });
   }
 }
+
