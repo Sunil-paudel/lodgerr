@@ -8,7 +8,7 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Loader2, UserCog, Mail, Briefcase, Home, Settings, ShieldCheck, ListChecks } from "lucide-react"; 
+import { Loader2, UserCog, Mail, Briefcase, Home, Settings, ShieldCheck, ListChecks, ListOrdered } from "lucide-react"; 
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
@@ -117,13 +117,13 @@ export default function DashboardPage() {
                     <Card className="hover:shadow-lg transition-shadow duration-200 ease-in-out">
                         <CardHeader>
                             <CardTitle className="text-xl font-headline flex items-center">
-                              <Home className="mr-2 h-5 w-5 text-accent" /> My Bookings
+                              <ListOrdered className="mr-2 h-5 w-5 text-accent" /> My Bookings
                             </CardTitle>
-                            <CardDescription>View and manage your stays.</CardDescription>
+                            <CardDescription>View and manage your upcoming and past trips.</CardDescription>
                         </CardHeader>
                         <CardContent>
                             <Button variant="outline" className="w-full border-primary/50 text-primary hover:bg-primary/10 hover:text-primary" asChild>
-                                <Link href="#">View Bookings (Coming Soon)</Link>
+                                <Link href="/dashboard/my-bookings">View My Bookings</Link>
                             </Button>
                         </CardContent>
                     </Card>
@@ -132,7 +132,7 @@ export default function DashboardPage() {
                             <CardTitle className="text-xl font-headline flex items-center">
                               <ListChecks className="mr-2 h-5 w-5 text-accent" /> My Properties
                             </CardTitle>
-                            <CardDescription>Manage your listed properties.</CardDescription>
+                            <CardDescription>Manage your listed properties and booking requests.</CardDescription>
                         </CardHeader>
                         <CardContent>
                             <Button variant="outline" className="w-full border-primary/50 text-primary hover:bg-primary/10 hover:text-primary" asChild>
@@ -157,3 +157,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+

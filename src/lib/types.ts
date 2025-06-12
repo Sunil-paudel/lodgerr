@@ -66,8 +66,9 @@ export interface Booking {
   };
   propertyDetails?: { 
     title?: string;
-    mainImage?: string;
-    id?: string;
+    mainImage?: string; // Will be property.images[0]
+    id?: string; // Property ID
+    location?: string;
   }
 }
 
@@ -90,3 +91,4 @@ export interface Payment {
   status: PaymentStatus | 'succeeded'; // Stripe uses 'succeeded' for successful payments
   createdAt: Date;
 }
+
