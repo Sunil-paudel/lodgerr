@@ -3,10 +3,9 @@ export type UserRole = 'guest' | 'host' | 'admin';
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 export type PricePeriod = 'nightly' | 'weekly' | 'monthly';
 
-// New type for booking status
 export type BookingStatus = 
   | 'pending_confirmation' 
-  | 'pending_payment' // New status for before payment
+  | 'pending_payment' 
   | 'confirmed_by_host' 
   | 'rejected_by_host' 
   | 'cancelled_by_guest' 
@@ -21,6 +20,13 @@ export interface User {
   stripeAccountId?: string;
   avatarUrl?: string;
   createdAt: Date;
+}
+
+export interface BookedDateRange {
+  bookingId: string; 
+  startDate: Date;
+  endDate: Date;
+  status: BookingStatus;
 }
 
 export interface Property {
@@ -47,11 +53,12 @@ export interface Property {
   createdAt: Date;
   availableFrom?: Date;
   availableTo?: Date;
+  bookedDateRanges?: BookedDateRange[];
 }
 
 export interface Booking {
   id: string;
-  listingId: string; // Should be Property ID
+  listingId: string; 
   guestId: string;
   startDate: Date;
   endDate: Date;
@@ -66,8 +73,8 @@ export interface Booking {
   };
   propertyDetails?: { 
     title?: string;
-    mainImage?: string; // Will be property.images[0]
-    id?: string; // Property ID
+    mainImage?: string; 
+    id?: string; 
     location?: string;
   }
 }
@@ -83,12 +90,11 @@ export interface Review {
 
 export interface Payment {
   id: string;
-  bookingId: string; // Reference to your Booking model's ID
-  stripePaymentIntentId: string; // Stripe Payment Intent ID
-  stripeChargeId?: string; // Stripe Charge ID (can be part of Payment Intent)
-  amount: number; // Amount in cents
-  currency: string; // e.g., 'usd'
-  status: PaymentStatus | 'succeeded'; // Stripe uses 'succeeded' for successful payments
+  bookingId: string; 
+  stripePaymentIntentId: string; 
+  stripeChargeId?: string; 
+  amount: number; 
+  currency: string; 
+  status: PaymentStatus | 'succeeded'; 
   createdAt: Date;
 }
-

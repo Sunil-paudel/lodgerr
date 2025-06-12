@@ -15,9 +15,7 @@ const manageBookingSchema = z.object({
   status: z.enum([
     'confirmed_by_host', 
     'rejected_by_host',
-    // Potentially add 'cancelled_by_host' later if different from rejected
   ] as [BookingStatus, ...BookingStatus[]]), 
-  // Add other manageable fields later, e.g., notes for host
 });
 
 export async function PATCH(
@@ -51,29 +49,74 @@ export async function PATCH(
       return NextResponse.json({ message: 'Booking not found.' }, { status: 404 });
     }
 
-    const property = await Property.findById(booking.listingId) as PropertyDocument | null;
-    if (!property) {
-      // This should ideally not happen if booking.listingId is valid
+    // Ensure booking.listingId is an ObjectId for the query
+    const listingObjectId = new mongoose.Types.ObjectId(booking.listingId);
+    let propertyToUpdate: PropertyDocument | null = null;
+
+
+    if (booking.bookingStatus !== 'pending_confirmation') {
+        return NextResponse.json({ message: `Cannot update booking. Current status is '${booking.bookingStatus}', not 'pending_confirmation'.`}, { status: 409 }); 
+    }
+    
+    // Fetch property before authorization check to ensure it exists
+    const tempProperty = await Property.findById(listingObjectId) as PropertyDocument | null;
+    if (!tempProperty) {
       return NextResponse.json({ message: 'Associated property not found.' }, { status: 404 });
     }
-
-    // Authorization check: User must be the host of the property or an admin
-    const isHost = property.hostId.toString() === session.user.id;
+     const isHost = tempProperty.hostId.toString() === session.user.id;
     const isAdmin = session.user.role === 'admin';
 
     if (!isHost && !isAdmin) {
       return NextResponse.json({ message: 'Forbidden: You are not authorized to manage this booking.' }, { status: 403 });
     }
 
-    // Logic for status transitions (e.g., can only confirm if 'pending_confirmation')
-    if (booking.bookingStatus !== 'pending_confirmation') {
-        return NextResponse.json({ message: `Cannot update booking. Current status is '${booking.bookingStatus}', not 'pending_confirmation'.`}, { status: 409 }); // Conflict
-    }
-
     booking.bookingStatus = newStatus;
-    // Add any other side effects here, e.g., sending notifications
-
     await booking.save();
+
+    // Update Property's bookedDateRanges
+    if (newStatus === 'rejected_by_host') {
+        propertyToUpdate = await Property.findByIdAndUpdate(
+            listingObjectId,
+            { $pull: { bookedDateRanges: { bookingId: booking._id } } },
+            { new: true }
+        ) as PropertyDocument | null;
+        if (propertyToUpdate) {
+            console.log(`[API /bookings/.../manage PATCH] Removed booking ${booking._id} from property ${listingObjectId} bookedDateRanges due to rejection.`);
+        } else {
+            console.warn(`[API /bookings/.../manage PATCH] Property ${listingObjectId} not found when trying to remove booking ${booking._id} from bookedDateRanges after rejection.`);
+        }
+    } else if (newStatus === 'confirmed_by_host') {
+        propertyToUpdate = await Property.findOneAndUpdate(
+            { _id: listingObjectId, "bookedDateRanges.bookingId": booking._id },
+            { $set: { "bookedDateRanges.$.status": newStatus } },
+            { new: true }
+        ) as PropertyDocument | null;
+
+        if (propertyToUpdate) {
+             console.log(`[API /bookings/.../manage PATCH] Updated property ${listingObjectId} bookedDateRanges for booking ${booking._id} to ${newStatus}.`);
+        } else {
+            // If the subdocument wasn't found to update, it might be missing; try adding it.
+            propertyToUpdate = await Property.findByIdAndUpdate(
+                listingObjectId,
+                { 
+                    $addToSet: { // Use $addToSet to avoid duplicates if somehow it exists but query above failed
+                        bookedDateRanges: {
+                            bookingId: booking._id,
+                            startDate: booking.startDate,
+                            endDate: booking.endDate,
+                            status: newStatus,
+                        }
+                    }
+                },
+                { new: true }
+            ) as PropertyDocument | null;
+             if (propertyToUpdate) {
+                console.warn(`[API /bookings/.../manage PATCH] Added booking ${booking._id} to property ${listingObjectId} bookedDateRanges as ${newStatus} (was missing or initial update failed).`);
+            } else {
+                 console.warn(`[API /bookings/.../manage PATCH] Property ${listingObjectId} not found for adding/updating booking ${booking._id} in bookedDateRanges.`);
+            }
+        }
+    }
 
     return NextResponse.json({ message: `Booking status updated to ${newStatus}.`, booking }, { status: 200 });
 

@@ -7,15 +7,14 @@ import Stripe from 'stripe';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import connectDB from '@/utils/db';
 import Booking from '@/models/Booking';
-import PropertyModel from '@/models/Property';
-import UserModel, { type IUser } from '@/models/User'; // Import User model
+import PropertyModel, { type PropertyDocument } from '@/models/Property';
+import UserModel, { type IUser } from '@/models/User'; 
 import * as z from 'zod';
 import { differenceInCalendarDays, startOfDay, format } from 'date-fns';
-import { sendEmail } from '@/utils/mailer'; // Import the sendEmail utility
+import { sendEmail } from '@/utils/mailer'; 
+import mongoose from 'mongoose';
 
-// **WARNING: Hardcoded Stripe Secret Key for testing. Remove before deployment!**
 const STRIPE_SECRET_KEY = "sk_test_51RZ79aD5LRi4lJMY7yYuDQ8aRlBJPpAqdHdYhHOZvcSWSgJWvSzQVM3sACZJzcdWo1VHKdnZKVxxkzZJWgVYb5fz00TC8f8KKK";
-
 const stripe = new Stripe(STRIPE_SECRET_KEY!, {
   apiVersion: '2024-04-10',
 });
@@ -33,19 +32,12 @@ const initiatePaymentSchema = z.object({
   path: ["endDate"],
 });
 
-// **WARNING: Hardcoded App URL for testing. Revert to process.env for deployment!**
 const APP_URL = "https://6000-firebase-studio-1749627677554.cluster-sumfw3zmzzhzkx4mpvz3ogth4y.cloudworkstations.dev";
-// const APP_URL = process.env.NEXT_PUBLIC_APP_URL;
 
 export async function POST(request: NextRequest) {
   try {
-    // if (!APP_URL) {
-    //   console.error("[API /bookings/initiate-payment POST] Error: NEXT_PUBLIC_APP_URL is not set in environment variables.");
-    //   return NextResponse.json({ message: 'Application URL is not configured. Cannot create Stripe session.' }, { status: 500 });
-    // }
-
     const session = await getServerSession(authOptions);
-    if (!session || !session.user || !session.user.id || !session.user.email) { // Ensure email exists for notifications
+    if (!session || !session.user || !session.user.id || !session.user.email) { 
       return NextResponse.json({ message: 'Unauthorized: You must be logged in and have an email address.' }, { status: 401 });
     }
 
@@ -64,10 +56,9 @@ export async function POST(request: NextRequest) {
     const normalizedStartDate = startOfDay(startDate);
     const normalizedEndDate = startOfDay(endDate);
 
-
     await connectDB();
 
-    const property = await PropertyModel.findById(propertyId);
+    let property = await PropertyModel.findById(propertyId) as PropertyDocument | null;
     if (!property) {
       return NextResponse.json({ message: 'Property not found.' }, { status: 404 });
     }
@@ -76,7 +67,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ message: 'Hosts cannot book their own properties.' }, { status: 403 });
     }
 
-    // Basic conflict check with property's general availability window
     if (property.availableFrom && normalizedStartDate < startOfDay(new Date(property.availableFrom))) {
         return NextResponse.json({ message: 'Booking start date is before property availability window.' }, { status: 400 });
     }
@@ -84,23 +74,37 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ message: 'Booking end date is after property availability window.' }, { status: 400 });
     }
     
-    // Advanced conflict detection: Check against existing confirmed/pending bookings
-    const conflictingBooking = await Booking.findOne({
+    const conflictingBookingInDB = await Booking.findOne({
       listingId: propertyId,
       bookingStatus: { $in: ['confirmed_by_host', 'pending_confirmation', 'pending_payment'] }, 
       startDate: { $lt: normalizedEndDate },
       endDate: { $gt: normalizedStartDate },
     });
 
-    if (conflictingBooking) {
-      console.log("[API /bookings/initiate-payment POST] Conflict found with booking:", conflictingBooking._id.toString(), "Status:", conflictingBooking.bookingStatus);
+    if (conflictingBookingInDB) {
+      console.log("[API /bookings/initiate-payment POST] Conflict found with existing booking in DB:", conflictingBookingInDB._id.toString(), "Status:", conflictingBookingInDB.bookingStatus);
       return NextResponse.json({ message: 'These dates are no longer available for this property. Please choose different dates.' }, { status: 409 }); 
     }
+    
+    // Check for conflicts in property.bookedDateRanges as well
+    if (property.bookedDateRanges) {
+        const conflictingRange = property.bookedDateRanges.find(range => {
+            const rangeStart = startOfDay(new Date(range.startDate));
+            const rangeEnd = startOfDay(new Date(range.endDate));
+            return ['pending_payment', 'pending_confirmation', 'confirmed_by_host'].includes(range.status) &&
+                   normalizedStartDate < rangeEnd && normalizedEndDate > rangeStart;
+        });
+        if (conflictingRange) {
+            console.log("[API /bookings/initiate-payment POST] Conflict found with property.bookedDateRanges:", conflictingRange);
+            return NextResponse.json({ message: 'These dates are no longer available (conflict in property data). Please choose different dates.' }, { status: 409 });
+        }
+    }
+
 
     let numberOfUnits = 0;
     if (property.pricePeriod === 'nightly') {
       numberOfUnits = differenceInCalendarDays(normalizedEndDate, normalizedStartDate);
-      if (numberOfUnits === 0 && normalizedStartDate.getTime() === normalizedEndDate.getTime()){ // Same day booking handled as 1 night
+      if (numberOfUnits === 0 && normalizedStartDate.getTime() === normalizedEndDate.getTime()){ 
         numberOfUnits = 1;
       }
     } else if (property.pricePeriod === 'weekly') {
@@ -109,15 +113,15 @@ export async function POST(request: NextRequest) {
       numberOfUnits = Math.max(1, Math.ceil(differenceInCalendarDays(normalizedEndDate, normalizedStartDate) / 30));
     }
 
-     if (numberOfUnits <= 0) { // Stricter check
+     if (numberOfUnits <= 0) { 
         return NextResponse.json({ message: 'Booking duration is invalid for the selected price period.' }, { status: 400 });
     }
 
     const totalPrice = property.price * numberOfUnits;
 
     const newBooking = new Booking({
-      listingId: propertyId,
-      guestId,
+      listingId: property._id, // Use property._id
+      guestId: new mongoose.Types.ObjectId(guestId), // Ensure guestId is ObjectId
       startDate: normalizedStartDate,
       endDate: normalizedEndDate,
       totalPrice,
@@ -127,7 +131,31 @@ export async function POST(request: NextRequest) {
     await newBooking.save();
     console.log("[API /bookings/initiate-payment POST] New pending_payment booking created:", newBooking._id.toString());
 
+    // Add to property's bookedDateRanges
+    // Re-fetch property to ensure atomicity or use $push with findByIdAndUpdate
+    property = await PropertyModel.findByIdAndUpdate(
+        propertyId,
+        { 
+            $push: { 
+                bookedDateRanges: {
+                    bookingId: newBooking._id, // Mongoose will cast this to ObjectId based on schema
+                    startDate: newBooking.startDate,
+                    endDate: newBooking.endDate,
+                    status: newBooking.bookingStatus,
+                }
+            }
+        },
+        { new: true } // Return the updated document
+    ) as PropertyDocument | null;
 
+    if (!property) {
+        console.error(`[API /bookings/initiate-payment POST] Property ${propertyId} not found after attempting to update bookedDateRanges for booking ${newBooking._id.toString()}. This is critical!`);
+        // Rollback booking creation or handle error appropriately
+        await Booking.findByIdAndDelete(newBooking._id);
+        return NextResponse.json({ message: 'Property update failed after booking creation.' }, { status: 500 });
+    }
+    console.log(`[API /bookings/initiate-payment POST] Added pending booking ${newBooking._id.toString()} to property ${property.id} bookedDateRanges.`);
+        
     const appUrl = APP_URL; 
     
     const stripeSession = await stripe.checkout.sessions.create({
@@ -160,16 +188,20 @@ export async function POST(request: NextRequest) {
 
     if (!stripeSession.id) {
         console.warn("[API /bookings/initiate-payment POST] Stripe session creation failed. Deleting temporary booking:", newBooking._id.toString());
-        await Booking.findByIdAndDelete(newBooking._id); 
+        await Booking.findByIdAndDelete(newBooking._id);
+        
+        // Attempt to remove from property's bookedDateRanges
+        await PropertyModel.findByIdAndUpdate(propertyId, {
+            $pull: { bookedDateRanges: { bookingId: newBooking._id } }
+        }).catch(err => console.error(`[API /bookings/initiate-payment POST] Failed to clean property bookedDateRanges after Stripe failure for booking ${newBooking._id.toString()}:`, err));
+        
         return NextResponse.json({ message: 'Failed to initiate payment session with provider.' }, { status: 500 });
     }
     console.log("[API /bookings/initiate-payment POST] Stripe session created:", stripeSession.id, "for booking:", newBooking._id.toString());
 
-    // Send emails after successful Stripe session creation and booking record creation
     const formattedStartDateString = format(normalizedStartDate, 'MMMM dd, yyyy');
     const formattedEndDateString = format(normalizedEndDate, 'MMMM dd, yyyy');
 
-    // Send email to guest
     const guestEmailResult = await sendEmail({
       to: guestEmail,
       subject: `Your Booking for ${property.title} is Pending Payment`,
@@ -182,7 +214,6 @@ export async function POST(request: NextRequest) {
       console.warn(`[API /bookings/initiate-payment POST] Failed to send pending payment email to guest ${guestEmail} for booking ${newBooking._id.toString()}. Error: ${guestEmailResult.error}`);
     }
 
-    // Fetch host details and send email to host
     const hostUser = await UserModel.findById(property.hostId).lean() as IUser | null;
     if (hostUser && hostUser.email) {
       const hostEmailResult = await sendEmail({
@@ -213,6 +244,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: errorMessage, errorDetails: error.toString() }, { status: 500 });
   }
 }
-
-
-    
