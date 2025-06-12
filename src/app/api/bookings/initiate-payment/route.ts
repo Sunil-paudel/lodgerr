@@ -9,7 +9,7 @@ import connectDB from '@/utils/db';
 import Booking from '@/models/Booking';
 import PropertyModel from '@/models/Property';
 import * as z from 'zod';
-import { differenceInCalendarDays, startOfDay, format } from 'date-fns'; // Added format
+import { differenceInCalendarDays, startOfDay, format } from 'date-fns';
 
 // **WARNING: Hardcoded Stripe Secret Key for testing. Remove before deployment!**
 const STRIPE_SECRET_KEY = "sk_test_51RZ79aD5LRi4lJMY7yYuDQ8aRlBJPpAqdHdYhHOZvcSWSgJWvSzQVM3sACZJzcdWo1VHKdnZKVxxkzZJWgVYb5fz00TC8f8KKK";
@@ -32,7 +32,7 @@ const initiatePaymentSchema = z.object({
 });
 
 // **WARNING: Hardcoded App URL for testing. Revert to process.env for deployment!**
-const APP_URL = "http://localhost:9002"; // Or your ngrok URL if testing webhooks locally
+const APP_URL = "https://6000-firebase-studio-1749627677554.cluster-sumfw3zmzzhzkx4mpvz3ogth4y.cloudworkstations.dev";
 
 export async function POST(request: NextRequest) {
   try {
@@ -112,7 +112,14 @@ export async function POST(request: NextRequest) {
     });
     await newBooking.save();
 
-    const appUrl = APP_URL; // Using hardcoded value
+    const appUrl = APP_URL; // Using hardcoded value for now
+    // For a proper setup, use:
+    // const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+    // if (!appUrl) {
+    //   console.error("[API /bookings/initiate-payment POST] Error: NEXT_PUBLIC_APP_URL is not set in environment variables.");
+    //   return NextResponse.json({ message: 'Application URL is not configured. Cannot create Stripe session.' }, { status: 500 });
+    // }
+
 
     const stripeSession = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
