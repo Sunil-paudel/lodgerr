@@ -14,11 +14,12 @@ import { useForm, SubmitHandler, Controller, useFieldArray } from 'react-hook-fo
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import UploadPage from '../upload/page';
+// import UploadPage from '../upload/page'; // Removed import
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-
+import { Loader2, X, Image as ImageIcon } from 'lucide-react'; // Added ImageIcon and X
+import NextImage from 'next/image'; // Using NextImage for clarity
 
 const MAX_IMAGES = 5;
 const MAX_FILE_SIZE_MB = 5;
@@ -79,7 +80,6 @@ export default function ListPropertyPage() {
     if (status === "unauthenticated") {
       router.replace("/login?callbackUrl=/list-property");
     }
-    // Cleanup object URLs on unmount
     return () => {
       imageUploadStates.forEach(state => {
         if (state.previewUrl && state.previewUrl.startsWith('blob:')) {
@@ -91,13 +91,8 @@ export default function ListPropertyPage() {
   }, [status, router]);
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    console.log('[CLIENT] handleFileChange triggered');
     const files = event.target.files;
-    if (!files || files.length === 0) {
-      console.log('[CLIENT] No files selected.');
-      return;
-    }
-    console.log(`[CLIENT] ${files.length} file(s) selected.`);
+    if (!files || files.length === 0) return;
 
     const currentUploadedCount = imageUploadStates.filter(s => s.cloudinaryUrl).length;
     if (currentUploadedCount + files.length > MAX_IMAGES) {
@@ -115,62 +110,52 @@ export default function ListPropertyPage() {
       isLoading: true,
       error: undefined,
       cloudinaryUrl: undefined,
-      previewUrl: URL.createObjectURL(file) // Create preview URL
+      previewUrl: URL.createObjectURL(file)
     }));
     setImageUploadStates(prev => [...prev, ...newUploadStates]);
-    setFileInputKey(Date.now());
+    setFileInputKey(Date.now()); // Reset file input to allow re-uploading the same file if needed after removal
 
     for (let i = 0; i < newUploadStates.length; i++) {
       const uploadState = newUploadStates[i];
       const file = uploadState.file;
-      console.log(`[CLIENT] Processing file: ${file.name}, size: ${file.size} bytes`);
 
       if (file.size > MAX_FILE_SIZE_BYTES) {
-        console.log(`[CLIENT] File ${file.name} is too large.`);
         setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, error: `File too large (max ${MAX_FILE_SIZE_MB}MB).` } : s));
         continue;
       }
 
       const formData = new FormData();
       formData.append('file', file);
-      console.log(`[CLIENT] FormData created for ${file.name}. Attempting upload...`);
 
       try {
         const response = await fetch('/api/upload', {
           method: 'POST',
           body: formData,
         });
-        console.log(`[CLIENT] Upload API response status for ${file.name}: ${response.status}`);
-
+        
         const responseText = await response.text();
         let result;
         try {
             result = JSON.parse(responseText);
         } catch (parseError) {
             console.error(`[CLIENT] Failed to parse JSON response for ${file.name}. Raw response:`, responseText, parseError);
-            const errorMsg = response.status === 503 ? "Image upload service is temporarily unavailable or not configured." : "Server returned an unreadable response (not JSON). Check server configuration.";
+            const errorMsg = response.status === 503 ? "Image upload service is temporarily unavailable or not configured." : "Server returned an unreadable response. Check server logs.";
             throw new Error(errorMsg);
         }
-        console.log(`[CLIENT] Upload API response data for ${file.name}:`, result);
-
 
         if (!response.ok) {
           throw new Error(result.message || `Upload failed: ${result.error || `Server error ${response.status}`}`);
         }
-
         if (!result.imageUrl) {
-          throw new Error('Upload successful but no image URL returned from server.');
+          throw new Error('Upload successful but no image URL returned.');
         }
 
-        console.log(`[CLIENT] File ${file.name} uploaded successfully. URL: ${result.imageUrl}`);
         setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, cloudinaryUrl: result.imageUrl } : s));
         appendImageFormField({ url: result.imageUrl });
-
       } catch (err: any) {
-         console.error(`[CLIENT] Error uploading ${file.name}:`, err);
          let uploadErrorMsg = err.message || 'Upload failed due to an unknown client error.';
           if (err.message && err.message.toLowerCase().includes('failed to fetch')) {
-            uploadErrorMsg = "Network error or server not reachable. Please check your internet connection.";
+            uploadErrorMsg = "Network error or server not reachable.";
           }
          setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, error: uploadErrorMsg } : s));
          toast({
@@ -183,35 +168,25 @@ export default function ListPropertyPage() {
   };
 
   const removeImage = (indexToRemove: number) => {
-    console.log(`[CLIENT] Attempting to remove image at index: ${indexToRemove}`);
     const imageStateToRemove = imageUploadStates[indexToRemove];
-
     if (imageStateToRemove) {
-        // Revoke object URL if it exists to prevent memory leaks
         if (imageStateToRemove.previewUrl && imageStateToRemove.previewUrl.startsWith('blob:')) {
             URL.revokeObjectURL(imageStateToRemove.previewUrl);
         }
         if (imageStateToRemove.cloudinaryUrl) {
-          console.log(`[CLIENT] Image to remove has Cloudinary URL: ${imageStateToRemove.cloudinaryUrl}`);
-          const formFieldIndex = imageFormFields.findIndex(field => field.url === imageStateToRemove.cloudinaryUrl);
+          const formFieldIndex = imageFormFields.findIndex(field => field.id && field.url === imageStateToRemove.cloudinaryUrl);
           if (formFieldIndex !== -1) {
             removeImageFormField(formFieldIndex);
-            console.log(`[CLIENT] Removed image from form data at index: ${formFieldIndex}`);
-          } else {
-            console.log(`[CLIENT] Cloudinary URL ${imageStateToRemove.cloudinaryUrl} not found in form fields.`);
           }
         }
     }
     setImageUploadStates(prev => prev.filter((_, index) => index !== indexToRemove));
-    console.log(`[CLIENT] Image removed from local imageUploadStates.`);
   };
 
-
   const onSubmit: SubmitHandler<PropertyFormData> = async (data) => {
-    console.log('[CLIENT] onSubmit triggered for property form.');
     setFormIsLoading(true);
     if (!session?.user?.id) {
-        toast({ title: "Authentication Error", description: "You must be logged in to list a property.", variant: "destructive"});
+        toast({ title: "Authentication Error", description: "You must be logged in.", variant: "destructive"});
         setFormIsLoading(false);
         return;
     }
@@ -228,7 +203,7 @@ export default function ListPropertyPage() {
 
     const propertyDataToSubmit = {
       ...data,
-      images: finalImageUrls,
+      images: finalImageUrls, // Ensure this matches schema
       amenities: selectedAmenities,
       hostId: session.user.id,
       host: {
@@ -236,7 +211,6 @@ export default function ListPropertyPage() {
         avatarUrl: session.user.image || undefined,
       }
     };
-    console.log('[CLIENT] Property data to submit to /api/properties:', propertyDataToSubmit);
 
     try {
       const response = await fetch('/api/properties', {
@@ -244,10 +218,7 @@ export default function ListPropertyPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(propertyDataToSubmit),
       });
-      console.log('[CLIENT] /api/properties response status:', response.status);
       const result = await response.json();
-      console.log('[CLIENT] /api/properties response data:', result);
-
 
       if (!response.ok) {
         throw new Error(result.message || "Failed to list property.");
@@ -258,9 +229,7 @@ export default function ListPropertyPage() {
         description: "Your property has been successfully listed.",
       });
       router.push(`/properties/${result.propertyId}`);
-
     } catch (error: any) {
-      console.error('[CLIENT] Error listing property:', error);
       toast({
         title: "Listing Failed",
         description: error.message || "An unexpected error occurred.",
@@ -388,15 +357,86 @@ export default function ListPropertyPage() {
                     </div>
                 </div>
 
+                {/* Image Upload Section */}
                 <div className="space-y-4">
-<UploadPage />
+                    <div className="space-y-2">
+                        <Label htmlFor="images" className="flex items-center">
+                            <ImageIcon className="mr-2 h-5 w-5 text-muted-foreground" /> Property Images (up to {MAX_IMAGES})
+                        </Label>
+                        <Input
+                            id="images"
+                            key={fileInputKey}
+                            type="file"
+                            multiple
+                            accept="image/png, image/jpeg, image/gif, image/webp"
+                            onChange={handleFileChange}
+                            disabled={formIsLoading || imageUploadStates.filter(s => s.cloudinaryUrl).length >= MAX_IMAGES}
+                            className="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                        />
+                        {errors.images && !imageUploadStates.some(s => s.cloudinaryUrl) && <p className="text-sm text-destructive">{errors.images.message}</p>}
+                    </div>
+                    
+                    {imageUploadStates.length > 0 && (
+                        <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                        {imageUploadStates.map((uploadState, index) => (
+                            <div key={index} className="relative group aspect-square border rounded-md p-1 shadow-sm bg-muted/30">
+                                {uploadState.previewUrl && (
+                                    <NextImage
+                                        src={uploadState.previewUrl}
+                                        alt={`Preview ${uploadState.file?.name || index}`}
+                                        fill
+                                        sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 20vw"
+                                        className="object-contain rounded" // Changed to object-contain for better preview
+                                    />
+                                )}
+                                {uploadState.isLoading && (
+                                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-md">
+                                        <Loader2 className="h-8 w-8 animate-spin text-white" />
+                                    </div>
+                                )}
+                                {!uploadState.isLoading && uploadState.error && (
+                                    <div className="absolute inset-0 bg-destructive/90 flex flex-col items-center justify-center p-2 rounded-md text-center">
+                                        <p className="text-xs text-destructive-foreground mb-1">{uploadState.error}</p>
+                                        <Button variant="outline" size="sm" className="h-auto py-1 px-2 text-xs border-destructive-foreground text-destructive-foreground hover:bg-destructive-foreground/20" onClick={() => removeImage(index)}>Remove</Button>
+                                    </div>
+                                )}
+                                {!uploadState.isLoading && uploadState.cloudinaryUrl && (
+                                     <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                        <Button
+                                            type="button"
+                                            variant="destructive"
+                                            size="icon"
+                                            className="h-7 w-7 bg-red-500/70 hover:bg-red-600 text-white shadow-md"
+                                            onClick={() => removeImage(index)}
+                                            aria-label="Remove image"
+                                        >
+                                            <X className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                )}
+                                 {!uploadState.isLoading && !uploadState.cloudinaryUrl && !uploadState.error && !uploadState.previewUrl && (
+                                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center rounded-md">
+                                        <p className="text-xs text-white">Error State</p>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                        </div>
+                    )}
+                     <p className="text-xs text-muted-foreground">
+                        Accepted formats: PNG, JPG, GIF, WEBP. Max {MAX_FILE_SIZE_MB}MB per image.
+                        {imageUploadStates.filter(s => s.cloudinaryUrl).length > 0 
+                         ? ` (${imageUploadStates.filter(s => s.cloudinaryUrl).length}/${MAX_IMAGES} uploaded)`
+                         : (imageUploadStates.some(s=>s.isLoading) ? ' (Uploading...)' : ' (No images selected yet)')}
+                    </p>
                 </div>
+                {/* End of Image Upload Section. Removed the <UploadPage /> component here. */}
 
 
                 <CardFooter className="p-0 pt-6">
                      <Button type="submit" size="lg" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" disabled={formIsLoading || imageUploadStates.some(s => s.isLoading)}>
                         {(formIsLoading || imageUploadStates.some(s => s.isLoading)) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        {formIsLoading ? 'Listing Property...' : (imageUploadStates.some(s => s.isLoading) ? 'Uploading Images...' : 'List My Property')}
+                        {formIsLoading ? 'Listing Property...' : (imageUploadStates.some(s => s.isLoading) ? 'Processing Images...' : 'List My Property')}
                     </Button>
                 </CardFooter>
                 </form>
@@ -406,4 +446,5 @@ export default function ListPropertyPage() {
       <Footer />
     </div>
   );
-}
+
+    

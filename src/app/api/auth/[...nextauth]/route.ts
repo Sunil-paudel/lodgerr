@@ -13,7 +13,7 @@ export const authOptions: NextAuthOptions = {
       id: "credentials",
       name: "Credentials",
 
-      // Fields for sign-in form
+      // Fields for sign-in formx
       credentials: {
         email: { label: "Email", type: "text", placeholder: "jsmith@example.com" },
         password: { label: "Password", type: "password" },
