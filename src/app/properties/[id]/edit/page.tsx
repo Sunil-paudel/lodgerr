@@ -1,0 +1,518 @@
+
+"use client";
+
+import { useEffect, useState } from 'react';
+import { useParams, useRouter }
+ from 'next/navigation';
+import Header from '@/components/layout/Header';
+import Footer from '@/components/layout/Footer';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useForm, SubmitHandler, Controller, useFieldArray } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { useSession } from 'next-auth/react';
+import { useToast } from '@/hooks/use-toast';
+import { Loader2, X, Image as ImageIcon, AlertTriangle } from 'lucide-react';
+import NextImage from 'next/image';
+import type { Property as PropertyType } from '@/lib/types'; // Client-side Property type
+
+const MAX_IMAGES = 5;
+const MAX_FILE_SIZE_MB = 5;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+// Zod schema for property editing - can be similar to listing, but all fields optional for PATCH
+const propertyEditSchema = z.object({
+  title: z.string().min(5, "Title must be at least 5 characters long.").max(100).optional(),
+  description: z.string().min(20, "Description must be at least 20 characters long.").max(5000).optional(),
+  type: z.enum(["House", "Apartment", "Room", "Unique Stay"]).optional(),
+  location: z.string().min(3).max(100).optional(),
+  address: z.string().min(5).max(200).optional(),
+  pricePerNight: z.coerce.number().positive().min(10).max(10000).optional(),
+  bedrooms: z.coerce.number().min(0).max(20).optional(),
+  bathrooms: z.coerce.number().min(0).max(10).optional(), // Allow 0 for rooms/unique
+  maxGuests: z.coerce.number().min(1).max(50).optional(),
+  images: z.array(
+    z.object({
+      url: z.string().url("A valid image URL is required.") // Keep this validation for new images
+    })
+  ).min(1, "At least one image is required.").max(MAX_IMAGES, `Maximum ${MAX_IMAGES} images.`).optional(), // Optional because user might not change images
+  amenities: z.array(z.string()).optional(),
+});
+
+type PropertyEditFormData = z.infer<typeof propertyEditSchema>;
+
+const availableAmenitiesList = [
+  'WiFi', 'Kitchen', 'Air Conditioning', 'Free Parking', 'TV',
+  'Washer', 'Dryer', 'Pool', 'Gym', 'Pet Friendly', 'Heating', 'Dedicated Workspace',
+  'Beach Access', 'Fireplace', 'Rooftop Access', 'Elevator'
+];
+
+
+export default function EditPropertyPage() {
+  const { data: session, status: authStatus } = useSession();
+  const router = useRouter();
+  const params = useParams();
+  const propertyId = params.id as string;
+  const { toast } = useToast();
+  
+  const [propertyData, setPropertyData] = useState<PropertyType | null>(null);
+  const [isLoading, setIsLoading] = useState(true); // For initial data load
+  const [formIsSubmitting, setFormIsSubmitting] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
+
+  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
+  const [imageUploadStates, setImageUploadStates] = useState<Array<{ file?: File; isLoading: boolean; error?: string; cloudinaryUrl?: string; previewUrl?: string; isExisting?: boolean }>>([]);
+  const [fileInputKey, setFileInputKey] = useState(Date.now());
+
+
+  const { control, handleSubmit, formState: { errors }, setValue, reset, watch } = useForm<PropertyEditFormData>({
+    resolver: zodResolver(propertyEditSchema),
+    defaultValues: {
+      images: [], // Default to empty, will be populated from fetched data
+    }
+  });
+
+  const { fields: imageFormFields, append: appendImageFormField, remove: removeImageFormField, replace: replaceImageFormFields } = useFieldArray({
+    control,
+    name: "images"
+  });
+
+
+  useEffect(() => {
+    if (authStatus === "unauthenticated") {
+      router.replace(`/login?callbackUrl=/properties/${propertyId}/edit`);
+    }
+  }, [authStatus, router, propertyId]);
+
+  useEffect(() => {
+    if (propertyId && authStatus === "authenticated") {
+      const fetchProperty = async () => {
+        setIsLoading(true);
+        setPageError(null);
+        try {
+          const response = await fetch(`/api/properties/${propertyId}`);
+          if (!response.ok) {
+            const errorResult = await response.json();
+            throw new Error(errorResult.message || `Failed to fetch property: ${response.statusText}`);
+          }
+          const data: PropertyType = await response.json();
+
+          if (data.hostId !== session?.user?.id) {
+            setPageError("You are not authorized to edit this property.");
+            setPropertyData(null);
+            setIsLoading(false);
+            return;
+          }
+          
+          setPropertyData(data);
+          reset({ // Pre-fill form with fetched data
+            title: data.title,
+            description: data.description,
+            type: data.type,
+            location: data.location,
+            address: data.address,
+            pricePerNight: data.pricePerNight,
+            bedrooms: data.bedrooms,
+            bathrooms: data.bathrooms,
+            maxGuests: data.maxGuests,
+            // Images will be handled by imageUploadStates and useFieldArray
+          });
+          setSelectedAmenities(data.amenities || []);
+          
+          // Initialize imageUploadStates from existing images
+          const existingImages = data.images.map(url => ({
+            cloudinaryUrl: url,
+            previewUrl: url, // For existing images, preview is the same as cloudinary URL
+            isLoading: false,
+            isExisting: true,
+          }));
+          setImageUploadStates(existingImages);
+          // Sync react-hook-form's image array
+          replaceImageFormFields(existingImages.map(img => ({ url: img.cloudinaryUrl! })));
+
+        } catch (err: any) {
+          console.error("Error fetching property for edit:", err);
+          setPageError(err.message || "An error occurred while fetching property details.");
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      fetchProperty();
+    }
+  }, [propertyId, authStatus, session, reset, replaceImageFormFields]);
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const currentImageCount = imageUploadStates.length;
+    if (currentImageCount + files.length > MAX_IMAGES) {
+      toast({
+        title: "Too many images",
+        description: `You can upload a maximum of ${MAX_IMAGES} images. You have ${currentImageCount} selected/uploaded.`,
+        variant: "destructive",
+      });
+      setFileInputKey(Date.now());
+      return;
+    }
+
+    const newUploadStates = Array.from(files).map(file => ({
+      file,
+      isLoading: true,
+      error: undefined,
+      cloudinaryUrl: undefined,
+      previewUrl: URL.createObjectURL(file),
+      isExisting: false,
+    }));
+    setImageUploadStates(prev => [...prev, ...newUploadStates]);
+    setFileInputKey(Date.now());
+
+    for (let i = 0; i < newUploadStates.length; i++) {
+      const uploadState = newUploadStates[i];
+      const file = uploadState.file!;
+
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, error: `File too large (max ${MAX_FILE_SIZE_MB}MB).` } : s));
+        continue;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch('/api/upload', { method: 'POST', body: formData });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message || 'Upload failed');
+        
+        setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, cloudinaryUrl: result.imageUrl } : s));
+        appendImageFormField({ url: result.imageUrl }); // Add to RHF array
+      } catch (err: any) {
+        setImageUploadStates(prev => prev.map(s => s.file === file ? { ...s, isLoading: false, error: err.message || 'Upload failed' } : s));
+        toast({ title: `Upload Failed for ${file.name}`, description: err.message, variant: "destructive" });
+      }
+    }
+  };
+
+  const removeImage = (indexToRemove: number) => {
+    const imageStateToRemove = imageUploadStates[indexToRemove];
+    if (imageStateToRemove) {
+        if (imageStateToRemove.previewUrl && imageStateToRemove.previewUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(imageStateToRemove.previewUrl);
+        }
+        // Find corresponding RHF field by URL if it was successfully uploaded or existing
+        if (imageStateToRemove.cloudinaryUrl) {
+            const formFieldIndex = imageFormFields.findIndex(field => field.url === imageStateToRemove.cloudinaryUrl);
+            if (formFieldIndex !== -1) {
+                removeImageFormField(formFieldIndex);
+            }
+        }
+    }
+    setImageUploadStates(prev => prev.filter((_, index) => index !== indexToRemove));
+  };
+
+
+  const onSubmit: SubmitHandler<PropertyEditFormData> = async (data) => {
+    setFormIsSubmitting(true);
+
+    const finalImageUrls = imageUploadStates
+      .filter(state => state.cloudinaryUrl && !state.error) // Only successfully uploaded or existing non-errored
+      .map(state => ({ url: state.cloudinaryUrl! }));
+
+    if (finalImageUrls.length === 0) {
+        toast({ title: "Validation Error", description: "At least one image must be present.", variant: "destructive"});
+        setFormIsSubmitting(false);
+        return;
+    }
+
+    // Construct only the fields that have changed or are part of the schema
+    const changedData: Partial<PropertyEditFormData> = {};
+    (Object.keys(data) as Array<keyof PropertyEditFormData>).forEach(key => {
+        if (data[key] !== undefined && data[key] !== propertyData?.[key as keyof PropertyType]) { // Check if value changed from original
+           if (key === 'images') return; // Images handled separately
+            (changedData as any)[key] = data[key];
+        }
+    });
+    
+    // Always include images and amenities if they are to be updated
+    changedData.images = finalImageUrls;
+    changedData.amenities = selectedAmenities;
+
+
+    if (Object.keys(changedData).length === 0 && 
+        JSON.stringify(finalImageUrls.map(img => img.url).sort()) === JSON.stringify(propertyData?.images.sort() || []) &&
+        JSON.stringify(selectedAmenities.sort()) === JSON.stringify(propertyData?.amenities.sort() || [])
+    ) {
+        toast({ title: "No Changes", description: "No changes were made to the property.", variant: "default" });
+        setFormIsSubmitting(false);
+        router.push(`/properties/${propertyId}`);
+        return;
+    }
+
+
+    try {
+      const response = await fetch(`/api/properties/${propertyId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(changedData),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || "Failed to update property.");
+      }
+
+      toast({
+        title: "Property Updated!",
+        description: "Your property has been successfully updated.",
+      });
+      router.push(`/properties/${propertyId}`);
+      router.refresh(); // Refresh to see changes if staying on a related page or for cache invalidation
+    } catch (error: any) {
+      toast({
+        title: "Update Failed",
+        description: error.message || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setFormIsSubmitting(false);
+    }
+  };
+  
+  const handleAmenityChange = (amenity: string) => {
+    setSelectedAmenities(prev =>
+      prev.includes(amenity) ? prev.filter(item => item !== amenity) : [...prev, amenity]
+    );
+  };
+
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col min-h-screen">
+        <Header />
+        <main className="flex-grow flex items-center justify-center">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="ml-4 text-muted-foreground">Loading property details...</p>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (pageError) {
+     return (
+      <div className="flex flex-col min-h-screen">
+        <Header />
+        <main className="flex-grow container mx-auto px-4 py-8 flex flex-col items-center justify-center text-center">
+            <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
+            <h1 className="text-2xl font-semibold text-destructive mb-2">Access Denied or Error</h1>
+            <p className="text-muted-foreground mb-6">{pageError}</p>
+            <Button onClick={() => router.push('/')} variant="outline">Go to Homepage</Button>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (!propertyData) { // Should be covered by pageError, but as a fallback
+    return (
+      <div className="flex flex-col min-h-screen">
+        <Header />
+        <main className="flex-grow flex items-center justify-center">Property not found or not authorized.</main>
+        <Footer />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col min-h-screen">
+      <Header />
+      <main className="flex-grow container mx-auto px-4 py-8">
+        <Card className="max-w-3xl mx-auto shadow-lg">
+            <CardHeader>
+                <CardTitle className="text-3xl font-bold text-primary font-headline">Edit Your Property</CardTitle>
+                <CardDescription>Update the details for &quot;{propertyData.title}&quot;.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-6">
+                <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+
+                <div className="space-y-2">
+                    <Label htmlFor="title">Property Title</Label>
+                    <Controller name="title" control={control} render={({ field }) => <Input {...field} id="title" placeholder="e.g., Charming Seaside Cottage" disabled={formIsSubmitting} />} />
+                    {errors.title && <p className="text-sm text-destructive">{errors.title.message}</p>}
+                </div>
+
+                <div className="space-y-2">
+                    <Label htmlFor="description">Description</Label>
+                    <Controller name="description" control={control} render={({ field }) => <Textarea {...field} id="description" placeholder="Describe what makes your place special..." rows={5} disabled={formIsSubmitting}/>} />
+                    {errors.description && <p className="text-sm text-destructive">{errors.description.message}</p>}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                        <Label htmlFor="type">Property Type</Label>
+                        <Controller
+                            name="type"
+                            control={control}
+                            render={({ field }) => (
+                                <Select onValueChange={field.onChange} value={field.value} disabled={formIsSubmitting}>
+                                <SelectTrigger id="type">
+                                    <SelectValue placeholder="Select property type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="House">House</SelectItem>
+                                    <SelectItem value="Apartment">Apartment</SelectItem>
+                                    <SelectItem value="Room">Room (Private or Shared)</SelectItem>
+                                    <SelectItem value="Unique Stay">Unique Stay (e.g., Cabin, Tiny House)</SelectItem>
+                                </SelectContent>
+                                </Select>
+                            )}
+                        />
+                         {errors.type && <p className="text-sm text-destructive">{errors.type.message}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="pricePerNight">Price per Night ($)</Label>
+                        <Controller name="pricePerNight" control={control} render={({ field }) => <Input {...field} id="pricePerNight" type="number" placeholder="120" disabled={formIsSubmitting}/> } />
+                        {errors.pricePerNight && <p className="text-sm text-destructive">{errors.pricePerNight.message}</p>}
+                    </div>
+                </div>
+
+                <div className="space-y-2">
+                    <Label htmlFor="location">General Location / City</Label>
+                    <Controller name="location" control={control} render={({ field }) => <Input {...field} id="location" placeholder="e.g., Austin, Texas" disabled={formIsSubmitting}/> } />
+                    {errors.location && <p className="text-sm text-destructive">{errors.location.message}</p>}
+                </div>
+                 <div className="space-y-2">
+                    <Label htmlFor="address">Full Address (Street, City, State, Zip)</Label>
+                    <Controller name="address" control={control} render={({ field }) => <Input {...field} id="address" placeholder="e.g., 456 Oak Lane, Austin, TX 78701" disabled={formIsSubmitting}/> } />
+                    {errors.address && <p className="text-sm text-destructive">{errors.address.message}</p>}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="space-y-2">
+                        <Label htmlFor="bedrooms">Bedrooms</Label>
+                        <Controller name="bedrooms" control={control} render={({ field }) => <Input {...field} id="bedrooms" type="number" disabled={formIsSubmitting}/> } />
+                        {errors.bedrooms && <p className="text-sm text-destructive">{errors.bedrooms.message}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="bathrooms">Bathrooms</Label>
+                        <Controller name="bathrooms" control={control} render={({ field }) => <Input {...field} id="bathrooms" type="number" disabled={formIsSubmitting}/> } />
+                        {errors.bathrooms && <p className="text-sm text-destructive">{errors.bathrooms.message}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="maxGuests">Max Guests</Label>
+                        <Controller name="maxGuests" control={control} render={({ field }) => <Input {...field} id="maxGuests" type="number" disabled={formIsSubmitting}/> } />
+                        {errors.maxGuests && <p className="text-sm text-destructive">{errors.maxGuests.message}</p>}
+                    </div>
+                </div>
+
+                <div className="space-y-2">
+                    <Label>Amenities</Label>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3 border p-4 rounded-md max-h-60 overflow-y-auto">
+                    {availableAmenitiesList.map(amenity => (
+                        <div key={amenity} className="flex items-center space-x-2">
+                        <Checkbox
+                            id={`amenity-${amenity}`}
+                            onCheckedChange={() => handleAmenityChange(amenity)}
+                            checked={selectedAmenities.includes(amenity)}
+                            disabled={formIsSubmitting}
+                        />
+                        <Label htmlFor={`amenity-${amenity}`} className="font-normal text-sm cursor-pointer">{amenity}</Label>
+                        </div>
+                    ))}
+                    </div>
+                </div>
+
+                {/* Image Upload Section */}
+                <div className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="images-input" className="flex items-center">
+                            <ImageIcon className="mr-2 h-5 w-5 text-muted-foreground" /> Property Images (up to {MAX_IMAGES})
+                        </Label>
+                        <Input
+                            id="images-input" // Changed ID to avoid conflict with RHF 'images'
+                            key={fileInputKey}
+                            type="file"
+                            multiple
+                            accept="image/png, image/jpeg, image/gif, image/webp"
+                            onChange={handleFileChange}
+                            disabled={formIsSubmitting || imageUploadStates.filter(s => s.cloudinaryUrl && !s.error).length >= MAX_IMAGES}
+                            className="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                        />
+                        {errors.images && !imageUploadStates.some(s => s.cloudinaryUrl) && <p className="text-sm text-destructive">{errors.images.message}</p>}
+                    </div>
+                    
+                    {imageUploadStates.length > 0 && (
+                        <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                        {imageUploadStates.map((uploadState, index) => (
+                            <div key={uploadState.previewUrl || `existing-${index}`} className="relative group aspect-square border rounded-md p-1 shadow-sm bg-muted/30">
+                                {uploadState.previewUrl && (
+                                    <NextImage
+                                        src={uploadState.previewUrl}
+                                        alt={`Preview ${uploadState.file?.name || `image ${index}`}`}
+                                        fill
+                                        sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 20vw"
+                                        className="object-contain rounded"
+                                    />
+                                )}
+                                {uploadState.isLoading && (
+                                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-md">
+                                        <Loader2 className="h-8 w-8 animate-spin text-white" />
+                                    </div>
+                                )}
+                                {!uploadState.isLoading && uploadState.error && (
+                                    <div className="absolute inset-0 bg-destructive/90 flex flex-col items-center justify-center p-2 rounded-md text-center">
+                                        <p className="text-xs text-destructive-foreground mb-1">{uploadState.error}</p>
+                                        <Button variant="outline" size="sm" className="h-auto py-1 px-2 text-xs border-destructive-foreground text-destructive-foreground hover:bg-destructive-foreground/20" onClick={() => removeImage(index)}>Remove</Button>
+                                    </div>
+                                )}
+                                {!uploadState.isLoading && (uploadState.cloudinaryUrl || uploadState.isExisting) && !uploadState.error && (
+                                     <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                        <Button
+                                            type="button"
+                                            variant="destructive"
+                                            size="icon"
+                                            className="h-7 w-7 bg-red-500/70 hover:bg-red-600 text-white shadow-md"
+                                            onClick={() => removeImage(index)}
+                                            aria-label="Remove image"
+                                        >
+                                            <X className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                        </div>
+                    )}
+                     <p className="text-xs text-muted-foreground">
+                        Accepted formats: PNG, JPG, GIF, WEBP. Max {MAX_FILE_SIZE_MB}MB per image.
+                        {imageUploadStates.filter(s => s.cloudinaryUrl && !s.error).length > 0 
+                         ? ` (${imageUploadStates.filter(s => s.cloudinaryUrl && !s.error).length}/${MAX_IMAGES} images)`
+                         : (imageUploadStates.some(s=>s.isLoading) ? ' (Processing Images...)' : '')}
+                    </p>
+                </div>
+
+                <CardFooter className="p-0 pt-6 flex justify-end space-x-3">
+                     <Button variant="outline" type="button" onClick={() => router.back()} disabled={formIsSubmitting}>
+                        Cancel
+                     </Button>
+                     <Button type="submit" size="lg" className="bg-accent hover:bg-accent/90 text-accent-foreground" disabled={formIsSubmitting || imageUploadStates.some(s => s.isLoading) || imageUploadStates.filter(s => s.cloudinaryUrl && !s.error).length === 0}>
+                        {(formIsSubmitting || imageUploadStates.some(s => s.isLoading)) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        {formIsSubmitting ? 'Saving Changes...' : (imageUploadStates.some(s => s.isLoading) ? 'Processing Images...' : 'Save Changes')}
+                    </Button>
+                </CardFooter>
+                </form>
+            </CardContent>
+        </Card>
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
+    
