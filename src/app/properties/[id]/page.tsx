@@ -1,18 +1,18 @@
 
+"use client"; // This page now needs to be a client component for state and interactions
+
 import Image from 'next/image';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
-import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, Home as HomeIcon, ImageIcon, UserCircle, Calendar as CalendarIconLucide, DollarSign, Wifi } from 'lucide-react';
-import type { Metadata } from 'next';
+import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, Home as HomeIcon, ImageIcon, UserCircle, Calendar as CalendarIconLucide, DollarSign, Wifi, Loader2 } from 'lucide-react';
+// Metadata is now handled differently for client components, or can be fetched in a server component parent
+// import type { Metadata } from 'next'; 
 import { PropertyAmenityIcon } from '@/components/property/PropertyAmenityIcon';
 import Link from 'next/link';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
-import connectDB from '@/utils/db';
-import PropertyModel from '@/models/Property';
+import { useSession } from 'next-auth/react'; // Changed from getServerSession
 import type { Property as PropertyType } from '@/lib/types';
-import mongoose from 'mongoose';
+import mongoose from 'mongoose'; // Keep for type checking if needed, but not for direct DB calls here
 import { PropertyBookingCalendar } from '@/components/property/PropertyBookingCalendar';
 import {
   Carousel,
@@ -20,74 +20,150 @@ import {
   CarouselItem,
   CarouselNext,
   CarouselPrevious,
-} from "@/components/ui/carousel"
+} from "@/components/ui/carousel";
+import { useParams, useRouter } from 'next/navigation'; // For client components
+import { useEffect, useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import type { DateRange } from 'react-day-picker';
 
 
-interface PropertyDetailsPageProps {
-  params: { id: string };
-}
+// Metadata generation for client components should be handled differently.
+// For now, we'll set a generic title or fetch it within useEffect.
+// export async function generateMetadata({ params }: PropertyDetailsPageProps): Promise<Metadata> { ... }
 
-async function fetchPropertyById(id: string): Promise<PropertyType | null> {
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    console.warn(`[PropertyDetailsPage] Invalid property ID format: ${id}`);
-    return null;
-  }
-  await connectDB();
-  try {
-    const propertyDoc = await PropertyModel.findById(id).lean();
-    if (!propertyDoc) {
-      console.warn(`[PropertyDetailsPage] Property not found for ID: ${id}`);
-      return null;
+
+const PropertyDetailsPage = () => {
+  const params = useParams();
+  const propertyId = params.id as string;
+  const { data: session, status: authStatus } = useSession();
+  const router = useRouter();
+  const { toast } = useToast();
+
+  const [property, setProperty] = useState<PropertyType | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [isBookingLoading, setIsBookingLoading] = useState(false);
+  const [selectedDateRange, setSelectedDateRange] = useState<DateRange | undefined>(undefined);
+
+
+  useEffect(() => {
+    const fetchProperty = async () => {
+      if (!propertyId) {
+        setPageError("Property ID is missing.");
+        setIsLoading(false);
+        return;
+      }
+      setIsLoading(true);
+      setPageError(null);
+      try {
+        const response = await fetch(`/api/properties/${propertyId}`);
+        if (!response.ok) {
+          const errorResult = await response.json();
+          throw new Error(errorResult.message || `Failed to fetch property: ${response.statusText}`);
+        }
+        const data: PropertyType = await response.json();
+        setProperty(data);
+        if (data?.title) {
+          document.title = `${data.title} - Lodger`;
+        }
+      } catch (err: any) {
+        setPageError(err.message || "An error occurred while loading property details.");
+        setProperty(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProperty();
+  }, [propertyId]);
+
+  const handleReserve = async () => {
+    if (authStatus === "unauthenticated" || !session?.user) {
+      toast({ title: "Authentication Required", description: "Please log in to make a reservation.", variant: "destructive" });
+      router.push(`/login?callbackUrl=/properties/${propertyId}`);
+      return;
+    }
+    if (!selectedDateRange?.from || !selectedDateRange?.to) {
+      toast({ title: "Dates Required", description: "Please select both check-in and check-out dates.", variant: "destructive" });
+      return;
+    }
+    if (!property) {
+      toast({ title: "Error", description: "Property data not available.", variant: "destructive" });
+      return;
     }
 
-    const { _id, __v, hostId, createdAt, updatedAt, ...rest } = propertyDoc as any;
+    setIsBookingLoading(true);
+    try {
+      const response = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          propertyId: property.id,
+          startDate: selectedDateRange.from.toISOString(),
+          endDate: selectedDateRange.to.toISOString(),
+        }),
+      });
+      const result = await response.json();
 
-    return {
-      id: _id.toString(),
-      hostId: (hostId as mongoose.Types.ObjectId).toString(),
-      images: propertyDoc.images || [],
-      price: propertyDoc.price, 
-      pricePeriod: propertyDoc.pricePeriod, 
-      createdAt: createdAt instanceof Date ? createdAt : new Date(createdAt),
-      updatedAt: updatedAt instanceof Date ? updatedAt : new Date(updatedAt),
-      host: {
-          name: propertyDoc.host?.name || 'Unknown Host',
-          avatarUrl: propertyDoc.host?.avatarUrl
-      },
-      ...rest,
-    } as PropertyType;
-
-  } catch (error) {
-    console.error(`[PropertyDetailsPage] Error fetching property by ID ${id}:`, error);
-    return null;
-  }
-}
-
-export async function generateMetadata({ params }: PropertyDetailsPageProps): Promise<Metadata> {
-  const property = await fetchPropertyById(params.id);
-  if (!property) {
-    return {
-      title: 'Property Not Found - Lodger',
-    };
-  }
-  return {
-    title: `${property.title} - Lodger`,
-    description: property.description.substring(0, 160),
+      if (!response.ok) {
+        throw new Error(result.message || "Failed to create booking.");
+      }
+      toast({
+        title: "Booking Request Sent!",
+        description: result.message || "Your booking request has been sent and is pending confirmation.",
+      });
+      setSelectedDateRange(undefined); // Clear dates after successful booking
+      // Optionally, redirect to a "my bookings" page or refresh data
+    } catch (error: any) {
+      toast({
+        title: "Booking Failed",
+        description: error.message || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsBookingLoading(false);
+    }
   };
-}
 
-const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
-  const session = await getServerSession(authOptions);
-  const property = await fetchPropertyById(params.id);
 
-  if (!property) {
+  if (isLoading || authStatus === "loading") {
+    return (
+      <div className="flex flex-col min-h-screen">
+        <Header />
+        <main className="flex-grow container mx-auto px-4 py-8 text-center flex flex-col justify-center items-center">
+          <Loader2 className="h-16 w-16 animate-spin text-primary mb-4" />
+          <p className="text-muted-foreground">Loading property details...</p>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (pageError) {
     return (
       <div className="flex flex-col min-h-screen">
         <Header />
         <main className="flex-grow container mx-auto px-4 py-8 text-center flex flex-col justify-center items-center">
           <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
+          <h1 className="text-3xl font-bold mb-4 font-headline text-primary">Error</h1>
+          <p className="text-muted-foreground mb-6">{pageError}</p>
+          <Button asChild className="bg-accent hover:bg-accent/90 text-accent-foreground">
+            <Link href="/">Go Back to Homepage</Link>
+          </Button>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+  
+  if (!property) {
+     return (
+      <div className="flex flex-col min-h-screen">
+        <Header />
+        <main className="flex-grow container mx-auto px-4 py-8 text-center flex flex-col justify-center items-center">
+          <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
           <h1 className="text-3xl font-bold mb-4 font-headline text-primary">Property Not Found</h1>
-          <p className="text-muted-foreground mb-6">The property ID might be invalid, the property does not exist, or there was an issue fetching the details.</p>
+          <p className="text-muted-foreground mb-6">The property details could not be loaded.</p>
           <Button asChild className="bg-accent hover:bg-accent/90 text-accent-foreground">
             <Link href="/">Go Back to Homepage</Link>
           </Button>
@@ -99,18 +175,13 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
 
   const isOwner = session?.user?.id === property.hostId;
   const isAdmin = session?.user?.role === 'admin';
-
   const hostAvatarHint = "host avatar";
 
   const getPricePeriodText = (period: PropertyType['pricePeriod']) => {
     switch (period) {
-      case 'weekly':
-        return '/ week';
-      case 'monthly':
-        return '/ month';
-      case 'nightly':
-      default:
-        return '/ night';
+      case 'weekly': return '/ week';
+      case 'monthly': return '/ month';
+      case 'nightly': default: return '/ night';
     }
   };
 
@@ -144,16 +215,9 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
             )}
         </div>
 
-        {/* Image Carousel Section */}
         <div className="mb-8">
           {hasImages ? (
-            <Carousel
-              opts={{
-                align: "start",
-                loop: true,
-              }}
-              className="w-full max-w-4xl mx-auto"
-            >
+            <Carousel opts={{ align: "start", loop: true }} className="w-full max-w-4xl mx-auto">
               <CarouselContent>
                 {property.images.map((imgUrl, index) => (
                   <CarouselItem key={index} className="md:basis-full">
@@ -184,7 +248,6 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
             </div>
           )}
         </div>
-
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
           <div className="lg:col-span-2">
@@ -243,13 +306,24 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
               )}
 
               <div className="mb-4">
-                <PropertyBookingCalendar />
+                <PropertyBookingCalendar 
+                  selectedRange={selectedDateRange}
+                  onDateChange={setSelectedDateRange}
+                  price={property.price}
+                  pricePeriod={property.pricePeriod}
+                />
               </div>
 
-              <Button size="lg" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
-                Reserve (Coming Soon)
+              <Button 
+                size="lg" 
+                className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
+                onClick={handleReserve}
+                disabled={isBookingLoading || !selectedDateRange?.from || !selectedDateRange?.to}
+              >
+                {isBookingLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isBookingLoading ? "Reserving..." : "Reserve"}
               </Button>
-              <p className="text-xs text-muted-foreground text-center mt-2">You won&apos;t be charged yet</p>
+              <p className="text-xs text-muted-foreground text-center mt-2">You won&apos;t be charged yet (Demo)</p>
             </div>
           </div>
         </div>
@@ -260,4 +334,3 @@ const PropertyDetailsPage = async ({ params }: PropertyDetailsPageProps) => {
 };
 
 export default PropertyDetailsPage;
-
