@@ -40,14 +40,12 @@ export async function GET(
         startDate: range.startDate, 
         endDate: range.endDate,
         status: range.status,
-        createdAt: range.createdAt, // Ensure these are passed if needed by frontend type
-        updatedAt: range.updatedAt, // Ensure these are passed if needed by frontend type
+        createdAt: range.createdAt,
+        updatedAt: range.updatedAt,
       };
     });
     
-    // Truncate long log output if necessary
     console.log(`[API /properties/${id}/booked-ranges GET] Transformed booked ranges:`, JSON.stringify(bookedRanges, null, 2).substring(0, 500) + (JSON.stringify(bookedRanges, null, 2).length > 500 ? '...' : ''));
-
 
     return NextResponse.json(bookedRanges, { status: 200 });
 
