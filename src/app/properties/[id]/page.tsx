@@ -9,7 +9,7 @@ import { MapPin, BedDouble, Bath, Users, Star, Edit3, AlertTriangle, Home as Hom
 import { PropertyAmenityIcon } from '@/components/property/PropertyAmenityIcon';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import type { Property as PropertyType, BookingStatus, BookedDateRange as ActiveBookingRange } from '@/lib/types'; // Renamed import for clarity
+import type { Property as PropertyType, BookingStatus, BookedDateRange as ActiveBookingRangeType } from '@/lib/types';
 import { PropertyBookingCalendar } from '@/components/property/PropertyBookingCalendar';
 import {
   Carousel,
@@ -47,11 +47,10 @@ const PropertyDetailsPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
 
-  // State for fetched booked date ranges
-  const [activeBookings, setActiveBookings] = useState<ActiveBookingRange[] | null>(null);
+  const [activeBookings, setActiveBookings] = useState<ActiveBookingRangeType[] | null>(null);
   const [isLoadingActiveBookings, setIsLoadingActiveBookings] = useState(true);
   const [activeBookingsError, setActiveBookingsError] = useState<string | null>(null);
-
+  
   const [isBookingLoading, setIsBookingLoading] = useState(false);
   const [selectedDateRange, setSelectedDateRange] = useState<DateRange | undefined>(undefined);
   const [availabilityText, setAvailabilityText] = useState<string | null>(null);
@@ -87,7 +86,7 @@ const PropertyDetailsPage = () => {
           throw new Error(`Failed to fetch property data (${response.status}). Details: ${errorBodyText}`);
         }
         const data: PropertyType = await response.json();
-        console.log(`[PropertyDetailsPage] Property data fetched successfully for ID: ${propertyId}. Note: bookedDateRanges are now fetched separately.`);
+        console.log(`[PropertyDetailsPage] Property data fetched successfully for ID: ${propertyId}.`);
         setProperty(data);
         if (data?.title) {
           document.title = `${data.title} - Lodger`;
@@ -105,17 +104,16 @@ const PropertyDetailsPage = () => {
   }, [propertyId]);
 
 
-  // New useEffect to fetch active bookings
   useEffect(() => {
     const fetchBookedRangesForProperty = async () => {
-      if (!property || !property.id || isLoading) { // Ensure property data is loaded and not already loading main data
+      if (!property || !property.id || isLoading) {
         console.log(`[PropertyDetailsPage] Skipping fetchBookedRanges: property.id is ${property?.id}, isLoading is ${isLoading}`);
         return;
       }
       
       setIsLoadingActiveBookings(true);
       setActiveBookingsError(null);
-      setActiveBookings(null);
+      setActiveBookings(null); // Reset before fetching
       console.log(`[PropertyDetailsPage] Property ID ${property.id} available. Fetching booked ranges.`);
 
       try {
@@ -124,17 +122,24 @@ const PropertyDetailsPage = () => {
         const response = await fetch(fetchUrl);
 
         if (!response.ok) {
-          let errorBody;
+          let errorBodyText = `Status: ${response.status}, StatusText: ${response.statusText}.`;
           try {
-            errorBody = await response.json();
+            // Attempt to parse as JSON first, as our API should return JSON errors
+            const errorResult = await response.json();
+            errorBodyText = errorResult.message || JSON.stringify(errorResult);
           } catch (e) {
-            errorBody = await response.text().catch(() => "Could not read error response body");
+            // If JSON parsing fails, try to get as text (e.g., for HTML error pages)
+            try {
+                errorBodyText = await response.text();
+            } catch (textErr) {
+                errorBodyText += " And could not read error response body.";
+            }
           }
-          console.warn(`[PropertyDetailsPage] Failed to fetch booked ranges for ${property.id}: ${response.status}`, errorBody);
-          throw new Error(typeof errorBody === 'string' ? errorBody : errorBody.message || `Failed to fetch booked ranges (${response.status})`);
+          console.warn(`[PropertyDetailsPage] Failed to fetch booked ranges for ${property.id}: ${response.status}`, errorBodyText);
+          throw new Error(`Failed to fetch booked ranges. ${errorBodyText}`);
         }
-        const data: ActiveBookingRange[] = await response.json();
-        console.log(`[PropertyDetailsPage] Booked ranges data received for property ${property.id}:`, data);
+        const data: ActiveBookingRangeType[] = await response.json();
+        console.log(`[PropertyDetailsPage] Booked ranges data received for property ${property.id}:`, JSON.stringify(data, null, 2).substring(0, 500) + (JSON.stringify(data, null, 2).length > 500 ? '...' : ''));
         setActiveBookings(data);
       } catch (err: any) {
         console.error(`[PropertyDetailsPage] Error fetching booked ranges for property ${property.id}:`, err);
@@ -146,7 +151,7 @@ const PropertyDetailsPage = () => {
     };
 
     fetchBookedRangesForProperty();
-  }, [property, isLoading]); // Depends on property and main isLoading state
+  }, [property, isLoading]);
 
 
   useEffect(() => {
@@ -161,13 +166,14 @@ const PropertyDetailsPage = () => {
       } else if (toDate) {
           text = `Available until ${format(toDate, 'LLL dd, yyyy')}`;
       } else {
-          text = ""; 
+          text = "This property has open-ended availability."; 
       }
-      setAvailabilityText(text || null); 
+      setAvailabilityText(text);
+      console.log(`[PropertyDetailsPage Render] Using property.bookedDateRanges for display:`, activeBookings ? JSON.stringify(activeBookings).substring(0,300) : 'undefined or empty');
     } else {
       setAvailabilityText(null);
     }
-  }, [property]);
+  }, [property, activeBookings]);
 
   useEffect(() => {
     if (property && selectedDateRange?.from && selectedDateRange?.to) {
@@ -265,7 +271,6 @@ const PropertyDetailsPage = () => {
             setSelectedDateRange(undefined); 
             setCurrentBookingPriceDetails(null);
             
-            // Re-fetch booked ranges for the property to update calendar
              if (property && property.id) {
                 console.log(`[PropertyDetailsPage] Re-fetching booked ranges for ${property.id} after booking conflict.`);
                 setIsLoadingActiveBookings(true);
@@ -378,8 +383,6 @@ const PropertyDetailsPage = () => {
   };
 
   const hasImages = property.images && property.images.length > 0;
-
-  console.log(`[PropertyDetailsPage Render] About to render booked periods. isLoadingActiveBookings: ${isLoadingActiveBookings}, activeBookingsError: ${activeBookingsError}, activeBookings:`, activeBookings);
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -504,13 +507,12 @@ const PropertyDetailsPage = () => {
                     <AlertTriangle size={16} className="mr-2" />
                     Error loading booked periods: {activeBookingsError}
                 </div>
-              ) : activeBookings && activeBookings.filter(range => ['pending_payment', 'pending_confirmation', 'confirmed_by_host'].includes(range.status)).length > 0 ? (
+              ) : activeBookings && activeBookings.length > 0 ? (
                 <ul className="space-y-1 text-sm text-foreground/80 list-disc list-inside">
                   {activeBookings
-                    .filter(range => ['pending_payment', 'pending_confirmation', 'confirmed_by_host'].includes(range.status))
                     .map((booking, index) => (
                     <li key={booking.bookingId || index}>
-                      {format(parseISO(booking.startDate as unknown as string), 'LLL dd, yyyy')} - {format(parseISO(booking.endDate as unknown as string), 'LLL dd, yyyy')}
+                      {isValidDate(parseISO(booking.startDate as unknown as string)) ? format(parseISO(booking.startDate as unknown as string), 'LLL dd, yyyy') : 'Invalid Start Date'} - {isValidDate(parseISO(booking.endDate as unknown as string)) ? format(parseISO(booking.endDate as unknown as string), 'LLL dd, yyyy') : 'Invalid End Date'}
                       <span className="text-xs ml-2 px-1.5 py-0.5 rounded-full bg-muted-foreground/10 text-muted-foreground font-medium">
                         {formatBookingStatusDisplay(booking.status)}
                       </span>
