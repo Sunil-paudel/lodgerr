@@ -3,13 +3,13 @@ export type UserRole = 'guest' | 'host' | 'admin';
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 export type PricePeriod = 'nightly' | 'weekly' | 'monthly';
 
-export type BookingStatus = 
-  | 'pending_confirmation' 
-  | 'pending_payment' 
-  | 'confirmed_by_host' 
-  | 'rejected_by_host' 
-  | 'cancelled_by_guest' 
-  | 'completed' 
+export type BookingStatus =
+  | 'pending_confirmation'
+  | 'pending_payment'
+  | 'confirmed_by_host'
+  | 'rejected_by_host'
+  | 'cancelled_by_guest'
+  | 'completed'
   | 'no_show';
 
 export interface User {
@@ -22,11 +22,16 @@ export interface User {
   createdAt: Date;
 }
 
+// This interface is now for the separate BookedDateRange documents/collection
 export interface BookedDateRange {
-  bookingId: string; 
+  id: string; // Will be ObjectId from MongoDB for the document itself
+  propertyId: string; // ObjectId of the property this range belongs to
+  bookingId: string; // ObjectId of the booking this range represents
   startDate: Date;
   endDate: Date;
   status: BookingStatus;
+  createdAt: Date; // Timestamps for when this range was created/updated
+  updatedAt: Date;
 }
 
 export interface Property {
@@ -34,8 +39,8 @@ export interface Property {
   hostId: string;
   title: string;
   description: string;
-  price: number; 
-  pricePeriod: PricePeriod; 
+  price: number;
+  pricePeriod: PricePeriod;
   location: string;
   address?: string;
   maxGuests: number;
@@ -53,28 +58,28 @@ export interface Property {
   createdAt: Date;
   availableFrom?: Date;
   availableTo?: Date;
-  bookedDateRanges?: BookedDateRange[];
+  // bookedDateRanges is removed from here
 }
 
 export interface Booking {
   id: string;
-  listingId: string; 
+  listingId: string;
   guestId: string;
   startDate: Date;
   endDate: Date;
   totalPrice: number;
   paymentStatus: PaymentStatus;
-  bookingStatus: BookingStatus; 
+  bookingStatus: BookingStatus;
   createdAt: Date;
-  guestDetails?: { 
+  guestDetails?: {
     name?: string | null;
     email?: string | null;
-    avatarUrl?: string | null; 
+    avatarUrl?: string | null;
   };
-  propertyDetails?: { 
+  propertyDetails?: {
     title?: string;
-    mainImage?: string; 
-    id?: string; 
+    mainImage?: string;
+    id?: string;
     location?: string;
   }
 }
@@ -90,11 +95,11 @@ export interface Review {
 
 export interface Payment {
   id: string;
-  bookingId: string; 
-  stripePaymentIntentId: string; 
-  stripeChargeId?: string; 
-  amount: number; 
-  currency: string; 
-  status: PaymentStatus | 'succeeded'; 
+  bookingId: string;
+  stripePaymentIntentId: string;
+  stripeChargeId?: string;
+  amount: number;
+  currency: string;
+  status: PaymentStatus | 'succeeded';
   createdAt: Date;
 }

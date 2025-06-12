@@ -1,19 +1,10 @@
 
 import mongoose, { Schema, Document } from 'mongoose';
-import type { Property as PropertyType, PricePeriod, BookingStatus, BookedDateRange } from '@/lib/types';
+import type { Property as PropertyType, PricePeriod } from '@/lib/types';
 
-const bookedDateRangeSchema = new Schema<BookedDateRange & {_id: false} >({ 
-  bookingId: { type: Schema.Types.ObjectId, ref: 'Booking', required: true },
-  startDate: { type: Date, required: true },
-  endDate: { type: Date, required: true },
-  status: {
-    type: String,
-    enum: ['pending_confirmation', 'pending_payment', 'confirmed_by_host', 'rejected_by_host', 'cancelled_by_guest', 'completed', 'no_show'] as BookingStatus[],
-    required: true
-  },
-}, { _id: false });
+// BookedDateRange subdocument schema and array are removed from here
 
-export interface PropertyDocument extends Omit<PropertyType, 'id' | 'hostId' | 'images' | 'createdAt' | 'host' | 'bookedDateRanges'>, Document {
+export interface PropertyDocument extends Omit<PropertyType, 'id' | 'hostId' | 'images' | 'createdAt' | 'host'>, Document {
   hostId: mongoose.Types.ObjectId;
   images: string[];
   price: number;
@@ -26,7 +17,7 @@ export interface PropertyDocument extends Omit<PropertyType, 'id' | 'hostId' | '
   updatedAt: Date;
   availableFrom?: Date;
   availableTo?: Date;
-  bookedDateRanges: mongoose.Types.DocumentArray<BookedDateRange & Document>; 
+  // bookedDateRanges field is removed
 }
 
 const propertySchema = new Schema<PropertyDocument>(
@@ -121,10 +112,7 @@ const propertySchema = new Schema<PropertyDocument>(
       type: Date,
       required: false,
     },
-    bookedDateRanges: {
-      type: [bookedDateRangeSchema],
-      default: [],
-    }
+    // bookedDateRanges field is removed
   },
   {
     timestamps: true,
@@ -137,14 +125,7 @@ const propertySchema = new Schema<PropertyDocument>(
         if (ret.hostId instanceof mongoose.Types.ObjectId) {
           ret.hostId = ret.hostId.toString();
         }
-        if (ret.bookedDateRanges) {
-          ret.bookedDateRanges = ret.bookedDateRanges.map((range: any) => ({
-            bookingId: range.bookingId?.toString() || range.bookingId,
-            startDate: range.startDate, 
-            endDate: range.endDate,
-            status: range.status,
-          }));
-        }
+        // Transformation for bookedDateRanges is removed
       }
     },
     toObject: {
@@ -156,17 +137,7 @@ const propertySchema = new Schema<PropertyDocument>(
         if (ret.hostId instanceof mongoose.Types.ObjectId) {
           ret.hostId = ret.hostId.toString();
         }
-        if (ret.bookedDateRanges) {
-          ret.bookedDateRanges = ret.bookedDateRanges.map((range: any) => {
-            const rangeObj = range.toObject ? range.toObject() : range; // Ensure plain object
-            return {
-              bookingId: rangeObj.bookingId?.toString() || rangeObj.bookingId,
-              startDate: rangeObj.startDate,
-              endDate: rangeObj.endDate,
-              status: rangeObj.status,
-            };
-          });
-        }
+        // Transformation for bookedDateRanges is removed
       }
     }
   }
@@ -175,7 +146,6 @@ const propertySchema = new Schema<PropertyDocument>(
 propertySchema.index({ location: 'text', title: 'text', description: 'text' });
 propertySchema.index({ hostId: 1 });
 propertySchema.index({ createdAt: -1 });
-propertySchema.index({ "bookedDateRanges.bookingId": 1 });
-
+// Index for bookedDateRanges.bookingId is removed
 
 export default mongoose.models.Property || mongoose.model<PropertyDocument>("Property", propertySchema);
