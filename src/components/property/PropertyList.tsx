@@ -6,6 +6,7 @@ import type { Property as PropertyType } from '@/lib/types';
 import connectDB from '@/utils/db';
 import PropertyModel, { type PropertyDocument } from '@/models/Property'; 
 import mongoose from 'mongoose';
+import { startOfDay } from 'date-fns';
 
 interface PropertyListProps {
   searchLocation?: string;
@@ -22,38 +23,58 @@ async function fetchProperties(
   const query: mongoose.FilterQuery<PropertyDocument> = {};
 
   if (searchParams?.searchLocation) {
-    // Case-insensitive search for location, can also be extended to title or description
+    const searchRegex = new RegExp(searchParams.searchLocation, 'i');
     query.$or = [
-      { location: { $regex: new RegExp(searchParams.searchLocation, 'i') } },
-      { title: { $regex: new RegExp(searchParams.searchLocation, 'i') } },
-      // { address: { $regex: new RegExp(searchParams.searchLocation, 'i') } }, // Optionally search address
+      { location: { $regex: searchRegex } },
+      { title: { $regex: searchRegex } },
+      // { address: { $regex: searchRegex } }, // Optionally search address
     ];
   }
 
-  // Basic date filtering (can be made more sophisticated)
-  // This currently checks if property's general availability window overlaps with search dates.
-  // More advanced logic would involve checking against actual booked dates for the property.
+  const dateConditions: mongoose.FilterQuery<PropertyDocument>[] = [];
+
   if (searchParams?.searchCheckIn) {
-    const checkInDate = new Date(searchParams.searchCheckIn);
-    // Property should be available FROM this date or have no start date
-    query.$and = query.$and || [];
-    query.$and.push({ 
+    const checkInDate = startOfDay(new Date(searchParams.searchCheckIn));
+    // Property's availability must start on or before the search check-in date,
+    // OR the property has no specific start date defined.
+    dateConditions.push({
       $or: [
-        { availableFrom: { $lte: checkInDate } }, 
-        { availableFrom: { $exists: false } }
-      ] 
+        { availableFrom: { $exists: false } },
+        { availableFrom: null },
+        { availableFrom: { $lte: checkInDate } }
+      ]
     });
   }
+
   if (searchParams?.searchCheckOut) {
-    const checkOutDate = new Date(searchParams.searchCheckOut);
-     // Property should be available TO this date or have no end date
-    query.$and = query.$and || [];
-    query.$and.push({ 
+    const checkOutDate = startOfDay(new Date(searchParams.searchCheckOut));
+    // Property's availability must end on or after the search check-out date,
+    // OR the property has no specific end date defined.
+    dateConditions.push({
       $or: [
-        { availableTo: { $gte: checkOutDate } }, 
-        { availableTo: { $exists: false } }
-      ] 
+        { availableTo: { $exists: false } },
+        { availableTo: null },
+        { availableTo: { $gte: checkOutDate } }
+      ]
     });
+  }
+  
+  // If a property has specific availability dates, ensure the search range doesn't violate them.
+  // This is implicitly handled by the above, but we can be more explicit if needed
+  // e.g. if a property has availableFrom, searchCheckOut cannot be before it.
+  // if (searchParams?.searchCheckOut && searchParams.searchCheckIn) {
+  // This complex logic is better handled by checking actual booking slots in a more advanced system.
+  // The current logic checks if the property *could* be available during the search window
+  // based on its own defined start/end dates.
+  // }
+
+
+  if (dateConditions.length > 0) {
+    if (query.$and) {
+      query.$and.push(...dateConditions);
+    } else {
+      query.$and = dateConditions;
+    }
   }
 
   // Add guest count filtering in the future if needed
@@ -66,13 +87,15 @@ async function fetchProperties(
     .lean();
 
   return propertiesFromDB.map(prop => {
-    const { _id, __v, hostId, createdAt, updatedAt, images, ...rest } = prop as any;
+    const { _id, __v, hostId, createdAt, updatedAt, images, availableFrom, availableTo, ...rest } = prop as any;
     return {
       id: _id.toString(),
       hostId: (hostId as mongoose.Types.ObjectId).toString(),
       images: images || [],
       createdAt: createdAt instanceof Date ? createdAt : new Date(createdAt),
       updatedAt: updatedAt instanceof Date ? updatedAt : new Date(updatedAt),
+      availableFrom: availableFrom ? new Date(availableFrom) : undefined,
+      availableTo: availableTo ? new Date(availableTo) : undefined,
       host: {
           name: prop.host?.name || 'Unknown Host',
           avatarUrl: prop.host?.avatarUrl
@@ -97,7 +120,9 @@ const PropertyList = async (props: PropertyListProps) => {
 
   let propertiesToDisplay: PropertyType[] = [];
 
-  if (userId) {
+  // Logic to show user's own properties first (if logged in and properties exist)
+  // This sorting happens *after* filtering by search criteria.
+  if (userId && allProperties.length > 0) {
     const userProperties: PropertyType[] = [];
     const otherProperties: PropertyType[] = [];
 
@@ -108,15 +133,16 @@ const PropertyList = async (props: PropertyListProps) => {
         otherProperties.push(property);
       }
     }
-    // User's properties still sorted by createdAt (newest first within their group)
-    // Other properties also sorted by createdAt (newest first within their group)
+    // Both arrays (userProperties, otherProperties) are already sorted by createdAt from fetchProperties
     propertiesToDisplay = [...userProperties, ...otherProperties];
   } else {
     propertiesToDisplay = allProperties; // Already sorted by createdAt
   }
 
   if (!propertiesToDisplay || propertiesToDisplay.length === 0) {
-    const message = props.searchLocation ? `No properties found matching "${props.searchLocation}".` : "No properties found.";
+    const message = props.searchLocation || props.searchCheckIn || props.searchCheckOut 
+        ? `No properties found matching your search criteria.` 
+        : "No properties found.";
     return <p className="text-center text-muted-foreground py-10">{message}</p>;
   }
 
