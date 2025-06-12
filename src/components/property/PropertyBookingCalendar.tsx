@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { Calendar } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
 import type { DateRange } from "react-day-picker";
-import { startOfDay, differenceInCalendarDays, isBefore, isAfter, isValid, parseISO, isSameDay } from 'date-fns';
+import { startOfDay, differenceInCalendarDays, isBefore, isAfter, isValid, parseISO, isSameDay, format } from 'date-fns';
 import type { Property } from '@/lib/types';
 
 type ActiveBookingRange = { startDate: string; endDate: string };
