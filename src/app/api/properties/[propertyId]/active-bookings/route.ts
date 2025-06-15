@@ -1,7 +1,0 @@
-
-// This file path uses a conflicting dynamic segment name '[propertyId]' and is obsolete.
-// It has been marked as obsolete and should be deleted. 
-// Please ensure the directory structure src/app/api/properties/[propertyId]/ (and this file within it) no longer exists
-// if this error persists after restarting the server.
-
-    
