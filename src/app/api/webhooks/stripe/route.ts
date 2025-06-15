@@ -7,10 +7,10 @@ import Payment from '@/models/Payment';
 import BookedDateRangeModel from '@/models/BookedDateRange'; // Import new model
 import mongoose from 'mongoose';
 
-const STRIPE_SECRET_KEY = "sk_test_51RZ79aD5LRi4lJMY7yYuDQ8aRlBJPpAqdHdYhHOZvcSWSgJWvSzQVM3sACZJzcdWo1VHKdnZKVxxkzZJWgVYb5fz00TC8f8KKK";
-const WEBHOOK_SECRET = "whsec_YOUR_STRIPE_WEBHOOK_SIGNING_SECRET"; 
+// Use the environment variable for the webhook secret
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET; 
 
-const stripe = new Stripe(STRIPE_SECRET_KEY!, {
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2024-04-10',
 });
 
@@ -35,8 +35,9 @@ export const config = {
 };
 
 export async function POST(request: NextRequest) {
-  if (!WEBHOOK_SECRET || WEBHOOK_SECRET === "whsec_YOUR_STRIPE_WEBHOOK_SIGNING_SECRET") {
-    console.error("Stripe webhook secret is not configured or is using the placeholder. Please set it up in your Stripe Dashboard and update the code.");
+  // Check if the STRIPE_WEBHOOK_SECRET is configured
+  if (!STRIPE_WEBHOOK_SECRET) {
+    console.error("[Webhook] Stripe webhook secret (STRIPE_WEBHOOK_SECRET) is not configured in environment variables. Please set it up. Webhook processing will fail.");
     return NextResponse.json({ message: "Webhook secret not configured. Payment confirmation will fail." }, { status: 500 });
   }
   
@@ -46,12 +47,13 @@ export async function POST(request: NextRequest) {
   try {
     const rawBody = await requestToBuffer(request);
     if (!sig) {
-      console.warn("Stripe webhook error: Missing signature.");
+      console.warn("[Webhook] Stripe webhook error: Missing signature.");
       return NextResponse.json({ message: "Missing Stripe signature." }, { status: 400 });
     }
-    event = stripe.webhooks.constructEvent(rawBody, sig, WEBHOOK_SECRET);
+    // Use the environment variable STRIPE_WEBHOOK_SECRET here
+    event = stripe.webhooks.constructEvent(rawBody, sig, STRIPE_WEBHOOK_SECRET);
   } catch (err: any) {
-    console.error(`Stripe webhook signature verification failed: ${err.message}`);
+    console.error(`[Webhook] Stripe webhook signature verification failed: ${err.message}`);
     return NextResponse.json({ message: `Webhook Error: ${err.message}` }, { status: 400 });
   }
 
@@ -158,3 +160,4 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ received: true });
 }
+
