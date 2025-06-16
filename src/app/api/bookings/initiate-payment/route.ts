@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     // Check for conflicting BookedDateRange documents
     const conflictingRangeDoc = await BookedDateRangeModel.findOne({
       propertyId: new mongoose.Types.ObjectId(propertyId),
-      status: { $in: ['confirmed_by_host', 'pending_confirmation', 'pending_payment'] as BookingStatus[] },
+      status: { $in: ['confirmed_by_host', 'pending_confirmation', 'pending_payment'] as BookingStatus[] }, // Keep 'pending_payment' here for safety
       startDate: { $lt: normalizedEndDate },
       endDate: { $gt: normalizedStartDate },
     });
@@ -113,11 +113,11 @@ export async function POST(request: NextRequest) {
       startDate: normalizedStartDate,
       endDate: normalizedEndDate,
       totalPrice,
-      paymentStatus: 'pending',
-      bookingStatus: 'pending_payment',
+      paymentStatus: 'pending', // Payment status is 'pending'
+      bookingStatus: 'pending_confirmation', // Booking status is now 'pending_confirmation'
     }) as BookingDocument;
     await newBooking.save();
-    console.log("[API /bookings/initiate-payment POST] New pending_payment booking created:", newBooking._id.toString());
+    console.log("[API /bookings/initiate-payment POST] New booking created with 'pending_confirmation' status:", newBooking._id.toString());
 
     // Create a new BookedDateRange document
     const newBookedDateRange = new BookedDateRangeModel({
@@ -125,10 +125,10 @@ export async function POST(request: NextRequest) {
         bookingId: newBooking._id,
         startDate: newBooking.startDate,
         endDate: newBooking.endDate,
-        status: 'pending_payment', // Initial status
+        status: 'pending_confirmation', // BookedDateRange status is also 'pending_confirmation'
     });
     await newBookedDateRange.save();
-    console.log(`[API /bookings/initiate-payment POST] New BookedDateRange document created: ${newBookedDateRange._id.toString()} for booking ${newBooking._id.toString()}`);
+    console.log(`[API /bookings/initiate-payment POST] New BookedDateRange document created: ${newBookedDateRange._id.toString()} for booking ${newBooking._id.toString()} with 'pending_confirmation' status.`);
 
     const stripeSession = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -170,33 +170,35 @@ export async function POST(request: NextRequest) {
     const formattedStartDateString = format(normalizedStartDate, 'MMMM dd, yyyy');
     const formattedEndDateString = format(normalizedEndDate, 'MMMM dd, yyyy');
 
+    // Email to Guest: Informing them payment is pending, but booking request is now with host.
     const guestEmailResult = await sendEmail({
       to: guestEmail,
-      subject: `Your Booking for ${property.title} is Pending Payment`,
-      text: `Hi ${guestName},\n\nYour booking request for "${property.title}" from ${formattedStartDateString} to ${formattedEndDateString} for a total of $${totalPrice.toFixed(2)} is currently pending payment.\n\nYour booking is not confirmed until payment is successfully completed. You should have been redirected to Stripe to finalize your payment. If not, please check your browser or contact support.\n\nBooking ID: ${newBooking._id.toString()}\n\nThank you,\nThe Lodger Team`,
-      html: `<p>Hi ${guestName},</p><p>Your booking request for <strong>"${property.title}"</strong> from <strong>${formattedStartDateString}</strong> to <strong>${formattedEndDateString}</strong> for a total of <strong>$${totalPrice.toFixed(2)}</strong> is currently pending payment.</p><p>Your booking is not confirmed until payment is successfully completed. You should have been redirected to Stripe to finalize your payment. If not, please check your browser or contact support.</p><p>Booking ID: ${newBooking._id.toString()}</p><p>Thank you,<br/>The Lodger Team</p>`,
+      subject: `Your Booking Request for ${property.title} is Awaiting Host Confirmation`,
+      text: `Hi ${guestName},\n\nYour booking request for "${property.title}" from ${formattedStartDateString} to ${formattedEndDateString} for a total of $${totalPrice.toFixed(2)} is now awaiting host confirmation. Payment is still pending.\n\nYou should have been redirected to Stripe to finalize your payment. If not, please check your browser or contact support. Your booking is not fully confirmed until payment is successful AND the host accepts your request.\n\nBooking ID: ${newBooking._id.toString()}\n\nThank you,\nThe Lodger Team`,
+      html: `<p>Hi ${guestName},</p><p>Your booking request for <strong>"${property.title}"</strong> from <strong>${formattedStartDateString}</strong> to <strong>${formattedEndDateString}</strong> for a total of <strong>$${totalPrice.toFixed(2)}</strong> is now awaiting host confirmation. Payment is still pending.</p><p>You should have been redirected to Stripe to finalize your payment. If not, please check your browser or contact support. Your booking is not fully confirmed until payment is successful AND the host accepts your request.</p><p>Booking ID: ${newBooking._id.toString()}</p><p>Thank you,<br/>The Lodger Team</p>`,
     });
     if (guestEmailResult.success) {
-      console.log(`[API /bookings/initiate-payment POST] Pending payment email sent to guest ${guestEmail} for booking ${newBooking._id.toString()}`);
+      console.log(`[API /bookings/initiate-payment POST] Booking request (pending payment & host confirmation) email sent to guest ${guestEmail} for booking ${newBooking._id.toString()}`);
     } else {
-      console.warn(`[API /bookings/initiate-payment POST] Failed to send pending payment email to guest ${guestEmail} for booking ${newBooking._id.toString()}. Error: ${guestEmailResult.error}`);
+      console.warn(`[API /bookings/initiate-payment POST] Failed to send booking request email to guest ${guestEmail} for booking ${newBooking._id.toString()}. Error: ${guestEmailResult.error}`);
     }
 
+    // Email to Host: Informing them of a new booking request that is pending guest payment and their confirmation.
     const hostUser = await UserModel.findById(property.hostId).lean() as IUser | null;
     if (hostUser && hostUser.email) {
       const hostEmailResult = await sendEmail({
         to: hostUser.email,
-        subject: `Action Required: Booking Request (Pending Payment) for ${property.title}`,
-        text: `Hi ${hostUser.name || 'Host'},\n\nA guest (${guestName}, ${guestEmail}) has initiated a booking for your property "${property.title}" for the dates ${formattedStartDateString} to ${formattedEndDateString}.\n\nThe booking is currently pending payment by the guest. No action is required from you at this moment. You will be notified once the payment is confirmed and the booking status changes.\n\nBooking ID: ${newBooking._id.toString()}\nProperty ID: ${property.id}\n\nRegards,\nThe Lodger Team`,
-        html: `<p>Hi ${hostUser.name || 'Host'},</p><p>A guest (<strong>${guestName}</strong>, ${guestEmail}) has initiated a booking for your property "<strong>${property.title}</strong>" for the dates <strong>${formattedStartDateString}</strong> to <strong>${formattedEndDateString}</strong>.</p><p>The booking is currently pending payment by the guest. No action is required from you at this moment. You will be notified once the payment is confirmed and the booking status changes.</p><p>Booking ID: ${newBooking._id.toString()}<br/>Property ID: ${property.id}</p><p>Regards,<br/>The Lodger Team</p>`,
+        subject: `New Booking Request for ${property.title} (Awaiting Guest Payment & Your Confirmation)`,
+        text: `Hi ${hostUser.name || 'Host'},\n\nA guest (${guestName}, ${guestEmail}) has requested to book your property "${property.title}" for the dates ${formattedStartDateString} to ${formattedEndDateString}.\n\nThe guest is currently being directed to complete payment. Once payment is successful, the booking will await your confirmation in your dashboard. Please review this request in your dashboard.\n\nBooking ID: ${newBooking._id.toString()}\nProperty ID: ${property.id}\n\nRegards,\nThe Lodger Team`,
+        html: `<p>Hi ${hostUser.name || 'Host'},</p><p>A guest (<strong>${guestName}</strong>, ${guestEmail}) has requested to book your property "<strong>${property.title}</strong>" for the dates <strong>${formattedStartDateString}</strong> to <strong>${formattedEndDateString}</strong>.</p><p>The guest is currently being directed to complete payment. Once payment is successful, the booking will await your confirmation in your dashboard. Please review this request in your dashboard.</p><p>Booking ID: ${newBooking._id.toString()}<br/>Property ID: ${property.id}</p><p>Regards,<br/>The Lodger Team</p>`,
       });
        if (hostEmailResult.success) {
-        console.log(`[API /bookings/initiate-payment POST] Pending payment notification sent to host ${hostUser.email} for booking ${newBooking._id.toString()}`);
+        console.log(`[API /bookings/initiate-payment POST] New booking request notification (pending payment & host confirmation) sent to host ${hostUser.email} for booking ${newBooking._id.toString()}`);
       } else {
-        console.warn(`[API /bookings/initiate-payment POST] Failed to send pending payment notification to host ${hostUser.email} for booking ${newBooking._id.toString()}. Error: ${hostEmailResult.error}`);
+        console.warn(`[API /bookings/initiate-payment POST] Failed to send new booking request notification to host ${hostUser.email} for booking ${newBooking._id.toString()}. Error: ${hostEmailResult.error}`);
       }
     } else {
-      console.warn(`[API /bookings/initiate-payment POST] Could not find host email for property ${property.id} to send pending payment notification. Host ID: ${property.hostId}`);
+      console.warn(`[API /bookings/initiate-payment POST] Could not find host email for property ${property.id} to send new booking request notification. Host ID: ${property.hostId}`);
     }
 
     return NextResponse.json({ sessionId: stripeSession.id }, { status: 200 });
@@ -212,3 +214,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: errorMessage, errorDetails: error.toString() }, { status: 500 });
   }
 }
+
+    
