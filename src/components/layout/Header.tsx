@@ -1,11 +1,12 @@
+
 "use client";
 
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Menu, LogIn, UserPlus, HomeIcon, LogOut, UserCircle } from 'lucide-react';
+import { Menu, LogIn, UserPlus, HomeIcon, LogOut, UserCircle, ListOrdered, ListChecks } from 'lucide-react'; // Added ListOrdered, ListChecks
 import { useSession, signOut } from 'next-auth/react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'; // Added Avatar
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 const Header = () => {
   const { data: session, status } = useSession();
@@ -42,13 +43,26 @@ const Header = () => {
               List your property
             </Link>
           </Button>
+          {isAuthenticated && (
+            <>
+              <Button variant="link" asChild className="text-sm font-medium text-foreground/70 transition-colors hover:text-foreground hover:no-underline">
+                <Link href="/dashboard/my-bookings">
+                  My Bookings
+                </Link>
+              </Button>
+              <Button variant="link" asChild className="text-sm font-medium text-foreground/70 transition-colors hover:text-foreground hover:no-underline">
+                <Link href="/dashboard/my-properties">
+                  My Properties
+                </Link>
+              </Button>
+            </>
+          )}
         </nav>
 
         <div className="hidden flex-1 items-center justify-end space-x-2 md:flex">
           {isAuthenticated && session?.user ? (
             <>
               <Button variant="ghost" asChild>
-                 {/* This could link to a dashboard or profile page */}
                 <Link href="/dashboard" className="flex items-center"> 
                   <Avatar className="h-7 w-7 mr-2">
                     <AvatarImage src={session.user.image || undefined} alt={session.user.name || "User"} />
@@ -96,11 +110,21 @@ const Header = () => {
                 <Button variant="link" asChild className="text-lg font-medium justify-start p-0 h-auto">
                    <Link href="/list-property">List your property</Link>
                 </Button>
+                {isAuthenticated && (
+                  <>
+                    <Button variant="link" asChild className="text-lg font-medium justify-start p-0 h-auto">
+                      <Link href="/dashboard/my-bookings">My Bookings</Link>
+                    </Button>
+                    <Button variant="link" asChild className="text-lg font-medium justify-start p-0 h-auto">
+                      <Link href="/dashboard/my-properties">My Properties</Link>
+                    </Button>
+                  </>
+                )}
                 <hr className="my-4 border-border" />
                 {isAuthenticated && session?.user ? (
                   <>
                     <Button variant="ghost" asChild className="w-full justify-start text-lg">
-                      <Link href="/dashboard"> {/* Link to a dashboard or profile page */}
+                      <Link href="/dashboard">
                         <UserCircle className="mr-2 h-5 w-5" /> My Account
                       </Link>
                     </Button>
