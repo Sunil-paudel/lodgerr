@@ -180,9 +180,8 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
                 </CardContent>
                 <CardFooter className="flex justify-end space-x-2 pt-3">
                   <Button
-                    variant="outline"
+                    variant="destructive"
                     size="sm"
-                    className="border-red-500 text-red-600 hover:bg-red-500 hover:text-white"
                     onClick={() => handleManageBooking(booking.id, 'rejected_by_host')}
                     disabled={loadingStates[booking.id]}
                   >
@@ -190,9 +189,8 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
                     Reject
                   </Button>
                   <Button
-                    variant="outline"
                     size="sm"
-                    className="border-green-500 text-green-600 hover:bg-green-500 hover:text-white"
+                    className="bg-green-600 hover:bg-green-700 text-primary-foreground"
                     onClick={() => handleManageBooking(booking.id, 'confirmed_by_host')}
                     disabled={loadingStates[booking.id]}
                   >
@@ -242,3 +240,4 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
     </div>
   );
 }
+
