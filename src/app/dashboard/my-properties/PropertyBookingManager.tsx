@@ -65,7 +65,7 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
       const createdAt = booking.createdAt && isValid(new Date(booking.createdAt)) ? new Date(booking.createdAt) : null;
       
       return {
-        ...booking, // This ensures bookingStatus is carried over
+        ...booking, 
         formattedStartDate: startDate ? format(startDate, 'LLL dd, yyyy') : 'N/A',
         formattedEndDate: endDate ? format(endDate, 'LLL dd, yyyy') : 'N/A',
         formattedCreatedAt: createdAt ? format(createdAt, 'LLL dd, yyyy p') : 'N/A',
@@ -90,7 +90,8 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
         throw new Error(result.message || 'Failed to update booking status.');
       }
 
-      const formattedNewStatus = newStatus.replace(/_/g, ' ');
+      const formattedNewStatus = newStatus.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
 
       toast({
         title: 'Booking Updated',
@@ -178,7 +179,8 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
                   <p>Total Price: ${booking.totalPrice.toFixed(2)}</p>
                   <p>Requested: {booking.formattedCreatedAt}</p>
                 </CardContent>
-                <CardFooter className="flex justify-end space-x-2 pt-3">
+                {/* Updated CardFooter for better visibility if it renders */}
+                <CardFooter className="flex justify-end space-x-2 p-4 border-t mt-2">
                   <Button
                     variant="destructive"
                     size="sm"
@@ -240,4 +242,3 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
     </div>
   );
 }
-
