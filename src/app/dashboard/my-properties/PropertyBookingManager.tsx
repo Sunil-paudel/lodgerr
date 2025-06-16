@@ -3,12 +3,13 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import type { Booking as BookingType, BookingStatus } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { CheckCircle, XCircle, Loader2, CalendarDays, UserCircle, Info, ShieldAlert, Trash2 } from 'lucide-react';
+import { CheckCircle, XCircle, Loader2, CalendarDays, UserCircle, Info, ShieldAlert, Trash2, Edit3 } from 'lucide-react';
 import { format, isValid } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSession } from 'next-auth/react';
@@ -42,13 +43,14 @@ const getInitials = (name?: string | null) => {
   return (names[0][0] + (names[names.length - 1][0] || "")).toUpperCase();
 };
 
-const getStatusColor = (status?: BookingStatus) => {
+const getStatusColorClass = (status?: BookingStatus) => {
   switch (status) {
     case 'pending_confirmation': return 'text-yellow-600 bg-yellow-100/80 border-yellow-300';
+    case 'pending_payment': return 'text-orange-600 bg-orange-100/80 border-orange-300';
     case 'confirmed_by_host': return 'text-green-600 bg-green-100/80 border-green-300';
     case 'rejected_by_host': return 'text-red-600 bg-red-100/80 border-red-300';
     case 'cancelled_by_guest': return 'text-slate-600 bg-slate-100/80 border-slate-300';
-    case 'cancelled_by_admin': return 'text-orange-600 bg-orange-100/80 border-orange-300';
+    case 'cancelled_by_admin': return 'text-purple-600 bg-purple-100/80 border-purple-300';
     case 'completed': return 'text-blue-600 bg-blue-100/80 border-blue-300';
     default: return 'text-gray-600 bg-gray-100/80 border-gray-300';
   }
@@ -110,9 +112,7 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
         title: 'Booking Updated',
         description: `Booking status changed to ${formattedNewStatusDisplay}.`,
       });
-
       router.refresh();
-
     } catch (error: any) {
       toast({
         title: 'Error Updating Booking',
@@ -153,6 +153,8 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
     }
   };
 
+  const isAdmin = session?.user?.role === 'admin';
+
   if (initialBookings.length === 0) {
     return (
         <div className="text-center py-6 bg-muted/30 rounded-lg">
@@ -191,7 +193,6 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
     );
   }
 
-  const isAdmin = session?.user?.role === 'admin';
 
   return (
     <>
@@ -203,7 +204,7 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
           const bookingTitleForAlert = `booking for ${guestName} (${booking.formattedStartDate} - ${booking.formattedEndDate})`;
 
           return (
-            <Card key={booking.id} className={`shadow-sm hover:shadow-md transition-shadow ${getStatusColor(booking.bookingStatus)} border-opacity-60`}>
+            <Card key={booking.id} className={`shadow-sm hover:shadow-md transition-shadow ${getStatusColorClass(booking.bookingStatus)} border-opacity-60`}>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
@@ -216,7 +217,7 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
                       <CardDescription className="text-xs opacity-80">{booking.guestDetails?.email}</CardDescription>
                     </div>
                   </div>
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(booking.bookingStatus)} border`}>
+                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColorClass(booking.bookingStatus)} border`}>
                     {booking.formattedBookingStatus} (Payment: {booking.paymentStatus})
                   </span>
                 </div>
@@ -227,6 +228,13 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
                 <p>Requested: {booking.formattedCreatedAt}</p>
               </CardContent>
               <CardFooter className="flex flex-wrap justify-end items-center space-x-2 p-4 border-t mt-2 gap-y-2">
+                {isAdmin && (
+                    <Button variant="outline" size="sm" className="border-blue-500 text-blue-600 hover:bg-blue-500/10 hover:text-blue-700" asChild>
+                      <Link href={`/bookings/${booking.id}/edit`}>
+                        <Edit3 className="mr-2 h-4 w-4" /> Edit
+                      </Link>
+                    </Button>
+                )}
                 {booking.bookingStatus === 'pending_confirmation' && (
                   <>
                     <Button
@@ -278,12 +286,15 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
                   </Button>
                 )}
                 
-                {booking.bookingStatus !== 'pending_confirmation' && !(isAdmin && ['confirmed_by_host', 'pending_confirmation'].includes(booking.bookingStatus)) && !isAdmin && (
+                {!isAdmin && booking.bookingStatus !== 'pending_confirmation' && (
                      <p className="text-xs text-muted-foreground w-full text-right italic">No actions available for this booking status.</p>
                 )}
-                 {booking.bookingStatus !== 'pending_confirmation' && isAdmin && !['confirmed_by_host', 'pending_confirmation'].includes(booking.bookingStatus) && (
-                     <p className="text-xs text-muted-foreground w-full text-right italic">Admin: Manage via &quot;Admin Cancel&quot; or &quot;Admin Delete&quot; if applicable.</p>
+                 {isAdmin && booking.bookingStatus !== 'pending_confirmation' && !['confirmed_by_host'].includes(booking.bookingStatus) && (
+                     <p className="text-xs text-muted-foreground w-full text-right italic">Admin: Manage via &quot;Admin Delete&quot; for this status.</p>
                 )}
+                 {isAdmin && booking.bookingStatus === 'confirmed_by_host' && (
+                     <p className="text-xs text-muted-foreground w-full text-right italic">Admin: Manage via &quot;Admin Cancel&quot; or &quot;Admin Delete&quot;.</p>
+                 )}
               </CardFooter>
             </Card>
           );
@@ -317,4 +328,3 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
     </>
   );
 }
-

@@ -15,6 +15,7 @@ import { format } from "date-fns";
 
 interface EnrichedBookingForDisplay {
   id: string;
+  guestId: string; // Added guestId
   propertyDetails?: {
     id?: string;
     title?: string;
@@ -37,10 +38,10 @@ async function getUserBookings(userId: string): Promise<EnrichedBookingForDispla
   const bookingsFromDB = await BookingModel.find({ guestId: new mongoose.Types.ObjectId(userId) })
     .populate<{ listingId: PropertyDocument | null }>({
       path: 'listingId',
-      model: PropertyModel, // Explicitly specify model for population
-      select: 'title images location _id', // Select necessary fields
+      model: PropertyModel,
+      select: 'title images location _id',
     })
-    .sort({ createdAt: -1 }) // Show newest bookings first
+    .sort({ createdAt: -1 })
     .lean();
 
   return bookingsFromDB.map((bookingDoc) => {
@@ -55,6 +56,7 @@ async function getUserBookings(userId: string): Promise<EnrichedBookingForDispla
 
     return {
       id: booking._id.toString(),
+      guestId: booking.guestId.toString(), // Include guestId
       propertyDetails: property ? {
         id: property._id.toString(),
         title: property.title,

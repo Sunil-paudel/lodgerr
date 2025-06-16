@@ -3,12 +3,14 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, CalendarDays, DollarSign, Info, PackageCheck, CreditCard, Clock3, AlertTriangle, ImageIcon, Building } from 'lucide-react';
+import { MapPin, CalendarDays, DollarSign, Info, PackageCheck, CreditCard, Clock3, AlertTriangle, ImageIcon, Building, Edit3 } from 'lucide-react';
 import type { BookingStatus, PaymentStatus } from '@/lib/types';
-import { BookingActions } from './BookingActions'; // Import the new component
+import { BookingActions } from './BookingActions';
+import { useSession } from 'next-auth/react';
 
 interface EnrichedBookingForDisplay {
   id: string;
+  guestId: string; // Make sure guestId is available for comparison
   propertyDetails?: {
     id?: string;
     title?: string;
@@ -33,15 +35,16 @@ const getBookingStatusVariant = (status: BookingStatus): "default" | "secondary"
   switch (status) {
     case 'pending_confirmation':
     case 'pending_payment':
-      return "secondary"; // Yellowish/Orange in some themes
+      return "secondary";
     case 'confirmed_by_host':
     case 'completed':
-      return "default"; // Often Green or Primary
+      return "default";
     case 'rejected_by_host':
     case 'cancelled_by_guest':
-      return "destructive"; // Red
+    case 'cancelled_by_admin':
+      return "destructive";
     case 'no_show':
-      return "outline"; // Neutral
+      return "outline";
     default:
       return "outline";
   }
@@ -62,10 +65,13 @@ const getPaymentStatusVariant = (status: PaymentStatus): "default" | "secondary"
 };
 
 const BookingDisplayCard = ({ booking }: BookingDisplayCardProps) => {
+  const { data: session } = useSession();
   const propertyImage = booking.propertyDetails?.mainImage || 'https://placehold.co/600x400.png';
   const propertyTitle = booking.propertyDetails?.title || 'Property Title N/A';
   const propertyLocation = booking.propertyDetails?.location || 'Location N/A';
   const aiHint = booking.propertyDetails?.mainImage ? "booked property" : "placeholder property";
+
+  const isCurrentUserGuest = session?.user?.id === booking.guestId;
 
   return (
     <Card className="overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-200 ease-in-out">
@@ -133,11 +139,20 @@ const BookingDisplayCard = ({ booking }: BookingDisplayCardProps) => {
             <div className="flex items-center">
                 <Clock3 size={12} className="mr-1.5 flex-shrink-0" /> Booked on: {booking.formattedCreatedAt} (ID: {booking.id})
             </div>
-            <BookingActions
-              bookingId={booking.id}
-              bookingStatus={booking.rawBookingStatus}
-              propertyTitle={booking.propertyDetails?.title}
-            />
+            <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+              {isCurrentUserGuest && (
+                <Button variant="outline" size="sm" className="w-full sm:w-auto border-blue-500 text-blue-600 hover:bg-blue-500/10 hover:text-blue-700" asChild>
+                  <Link href={`/bookings/${booking.id}/edit`}>
+                    <Edit3 className="mr-2 h-4 w-4" /> Edit Booking
+                  </Link>
+                </Button>
+              )}
+              <BookingActions
+                bookingId={booking.id}
+                bookingStatus={booking.rawBookingStatus}
+                propertyTitle={booking.propertyDetails?.title}
+              />
+            </div>
           </CardFooter>
         </div>
       </div>
