@@ -233,28 +233,7 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
                   <p>Total Price: ${booking.totalPrice.toFixed(2)}</p>
                    <p>Created: {booking.formattedCreatedAt}</p>
                 </CardContent>
-                <CardFooter className="flex justify-end space-x-2 p-4 border-t mt-2">
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleManageBooking(booking.id, 'rejected_by_host')}
-                    disabled={loadingStates[booking.id] || booking.bookingStatus !== 'pending_confirmation'}
-                    title={booking.bookingStatus !== 'pending_confirmation' ? "Can only reject bookings pending confirmation" : "Reject this booking"}
-                  >
-                    {loadingStates[booking.id] ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <XCircle className="mr-1.5 h-4 w-4" />}
-                    Reject
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="bg-green-600 hover:bg-green-700 text-primary-foreground"
-                    onClick={() => handleManageBooking(booking.id, 'confirmed_by_host')}
-                    disabled={loadingStates[booking.id] || booking.bookingStatus !== 'pending_confirmation'}
-                    title={booking.bookingStatus !== 'pending_confirmation' ? "Can only accept bookings pending confirmation" : "Accept this booking"}
-                  >
-                    {loadingStates[booking.id] ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-1.5 h-4 w-4" />}
-                    Accept
-                  </Button>
-                </CardFooter>
+                {/* No CardFooter with Accept/Reject buttons for "Other Bookings" in this reverted version */}
               </Card>
             ))}
             </div>
@@ -263,5 +242,4 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
     </div>
   );
 }
-
     
