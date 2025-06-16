@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button'; // Added import
+import { Button } from '@/components/ui/button';
 import { MapPin, CalendarDays, DollarSign, Info, PackageCheck, CreditCard, Clock3, AlertTriangle, ImageIcon, Building, Edit3 } from 'lucide-react';
 import type { BookingStatus, PaymentStatus } from '@/lib/types';
 import { BookingActions } from './BookingActions';
@@ -13,7 +13,7 @@ import { useSession } from 'next-auth/react';
 
 interface EnrichedBookingForDisplay {
   id: string;
-  guestId: string; // Make sure guestId is available for comparison
+  guestId: string;
   propertyDetails?: {
     id?: string;
     title?: string;
@@ -144,14 +144,8 @@ const BookingDisplayCard = ({ booking }: BookingDisplayCardProps) => {
                 <Clock3 size={12} className="mr-1.5 flex-shrink-0" /> Booked on: {booking.formattedCreatedAt} (ID: {booking.id})
             </div>
             <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-              {(isCurrentUserGuest || isAdmin) && (
-                <Button variant="outline" size="sm" className="w-full sm:w-auto border-blue-500 text-blue-600 hover:bg-blue-500/10 hover:text-blue-700" asChild>
-                  <Link href={`/bookings/${booking.id}/edit`}>
-                    <Edit3 className="mr-2 h-4 w-4" /> Edit Booking
-                  </Link>
-                </Button>
-              )}
-              {isCurrentUserGuest && ( // BookingActions (like cancel) are typically for the guest themselves
+              {/* Edit Button Removed */}
+              {isCurrentUserGuest && (
                 <BookingActions
                   bookingId={booking.id}
                   bookingStatus={booking.rawBookingStatus}

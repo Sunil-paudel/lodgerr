@@ -1,5 +1,5 @@
 
-"use client"; // Add this directive
+"use client"; 
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -228,13 +228,7 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
                 <p>Requested: {booking.formattedCreatedAt}</p>
               </CardContent>
               <CardFooter className="flex flex-wrap justify-end items-center space-x-2 p-4 border-t mt-2 gap-y-2">
-                {isAdmin && (
-                    <Button variant="outline" size="sm" className="border-blue-500 text-blue-600 hover:bg-blue-500/10 hover:text-blue-700" asChild>
-                      <Link href={`/bookings/${booking.id}/edit`}>
-                        <Edit3 className="mr-2 h-4 w-4" /> Edit
-                      </Link>
-                    </Button>
-                )}
+                {/* Edit Button Removed */}
                 {booking.bookingStatus === 'pending_confirmation' && (
                   <>
                     <Button
