@@ -16,7 +16,7 @@ import { sendEmail } from '@/utils/mailer';
 import mongoose from 'mongoose';
 import type { BookingStatus } from '@/lib/types';
 
-const STRIPE_SECRET_KEY = process.env.Stripe_Secret_Key;
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const stripe = new Stripe(STRIPE_SECRET_KEY!, {
   apiVersion: '2024-04-10',
 });

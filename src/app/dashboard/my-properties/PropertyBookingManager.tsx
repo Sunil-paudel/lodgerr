@@ -65,7 +65,7 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
       const createdAt = booking.createdAt && isValid(new Date(booking.createdAt)) ? new Date(booking.createdAt) : null;
       
       return {
-        ...booking,
+        ...booking, // This ensures bookingStatus is carried over
         formattedStartDate: startDate ? format(startDate, 'LLL dd, yyyy') : 'N/A',
         formattedEndDate: endDate ? format(endDate, 'LLL dd, yyyy') : 'N/A',
         formattedCreatedAt: createdAt ? format(createdAt, 'LLL dd, yyyy p') : 'N/A',
