@@ -263,3 +263,5 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
     </div>
   );
 }
+
+    
