@@ -34,7 +34,7 @@ const initiatePaymentSchema = z.object({
   path: ["endDate"],
 });
 
-const APP_URL = "https://6000-firebase-studio-1749627677554.cluster-sumfw3zmzzhzkx4mpvz3ogth4y.cloudworkstations.dev";
+const APP_URL = process.env.NEXTAUTH_URL || 'http://localhost:9002'; // Use NEXTAUTH_URL with a fallback
 
 export async function POST(request: NextRequest) {
   try {
@@ -130,9 +130,6 @@ export async function POST(request: NextRequest) {
     await newBookedDateRange.save();
     console.log(`[API /bookings/initiate-payment POST] New BookedDateRange document created: ${newBookedDateRange._id.toString()} for booking ${newBooking._id.toString()}`);
 
-
-    const appUrl = APP_URL;
-
     const stripeSession = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [
@@ -150,8 +147,8 @@ export async function POST(request: NextRequest) {
         },
       ],
       mode: 'payment',
-      success_url: `${appUrl}/booking/success?session_id={CHECKOUT_SESSION_ID}&booking_id=${newBooking._id.toString()}`,
-      cancel_url: `${appUrl}/booking/cancel?booking_id=${newBooking._id.toString()}&property_id=${propertyId}`,
+      success_url: `${APP_URL}/booking/success?session_id={CHECKOUT_SESSION_ID}&booking_id=${newBooking._id.toString()}`,
+      cancel_url: `${APP_URL}/booking/cancel?booking_id=${newBooking._id.toString()}&property_id=${propertyId}`,
       client_reference_id: newBooking._id.toString(),
       metadata: {
         bookingId: newBooking._id.toString(),
