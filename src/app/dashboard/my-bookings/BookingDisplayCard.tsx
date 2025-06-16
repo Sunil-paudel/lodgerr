@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button'; // Added import
 import { MapPin, CalendarDays, DollarSign, Info, PackageCheck, CreditCard, Clock3, AlertTriangle, ImageIcon, Building, Edit3 } from 'lucide-react';
 import type { BookingStatus, PaymentStatus } from '@/lib/types';
 import { BookingActions } from './BookingActions';
