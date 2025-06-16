@@ -21,6 +21,7 @@ export async function GET(
     await connectDB();
     console.log(`[API /properties/${id}/booked-ranges GET] Attempting to fetch booked ranges for property ID: ${id}`);
 
+    // Statuses that make a date range effectively "unavailable" for new bookings
     const relevantStatuses: BookingStatus[] = ['pending_payment', 'pending_confirmation', 'confirmed_by_host'];
 
     const bookedRangesDocs = await BookedDateRangeModel.find({

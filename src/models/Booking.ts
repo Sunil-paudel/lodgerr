@@ -42,15 +42,15 @@ const bookingSchema = new Schema<BookingDocument>(
       type: String,
       enum: [
         'pending_confirmation', 
-        'pending_payment', // Added new status
+        'pending_payment',
         'confirmed_by_host', 
         'rejected_by_host', 
-        'cancelled_by_guest',
+        'cancelled_by_guest', // Added new status
         'completed',
         'no_show'
       ] as BookingStatus[],
       required: true,
-      default: 'pending_confirmation', // Default might change based on flow
+      default: 'pending_confirmation', 
     },
   },
   { timestamps: true }
@@ -58,6 +58,6 @@ const bookingSchema = new Schema<BookingDocument>(
 
 bookingSchema.index({ listingId: 1, startDate: 1, endDate: 1 });
 bookingSchema.index({ guestId: 1 });
-// bookingSchema.index({ hostId: 1, bookingStatus: 1 }); // If hostId is directly on booking
 
 export default mongoose.models.Booking || mongoose.model<BookingDocument>("Booking", bookingSchema);
+

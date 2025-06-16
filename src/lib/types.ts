@@ -8,7 +8,7 @@ export type BookingStatus =
   | 'pending_payment'
   | 'confirmed_by_host'
   | 'rejected_by_host'
-  | 'cancelled_by_guest'
+  | 'cancelled_by_guest' // Added new status
   | 'completed'
   | 'no_show';
 
@@ -58,7 +58,6 @@ export interface Property {
   createdAt: Date;
   availableFrom?: Date;
   availableTo?: Date;
-  // bookedDateRanges is removed from here
 }
 
 export interface Booking {
@@ -103,3 +102,4 @@ export interface Payment {
   status: PaymentStatus | 'succeeded';
   createdAt: Date;
 }
+

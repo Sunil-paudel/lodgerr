@@ -26,7 +26,7 @@ const bookedDateRangeSchema = new Schema<BookedDateRangeDocument>(
       type: Schema.Types.ObjectId,
       ref: 'Booking',
       required: true,
-      unique: true, // Each booking should only have one date range entry
+      unique: true, 
       index: true,
     },
     startDate: {
@@ -44,7 +44,7 @@ const bookedDateRangeSchema = new Schema<BookedDateRangeDocument>(
         'pending_payment',
         'confirmed_by_host',
         'rejected_by_host',
-        'cancelled_by_guest',
+        'cancelled_by_guest', // Added new status
         'completed',
         'no_show',
       ] as BookingStatus[],
@@ -61,3 +61,4 @@ bookedDateRangeSchema.index({ propertyId: 1, status: 1 });
 
 
 export default mongoose.models.BookedDateRange || mongoose.model<BookedDateRangeDocument>("BookedDateRange", bookedDateRangeSchema);
+
