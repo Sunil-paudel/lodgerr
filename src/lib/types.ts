@@ -8,7 +8,8 @@ export type BookingStatus =
   | 'pending_payment'
   | 'confirmed_by_host'
   | 'rejected_by_host'
-  | 'cancelled_by_guest' // Added new status
+  | 'cancelled_by_guest'
+  | 'cancelled_by_admin' // New status
   | 'completed'
   | 'no_show';
 

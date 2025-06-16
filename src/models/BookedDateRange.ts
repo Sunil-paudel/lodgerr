@@ -44,7 +44,8 @@ const bookedDateRangeSchema = new Schema<BookedDateRangeDocument>(
         'pending_payment',
         'confirmed_by_host',
         'rejected_by_host',
-        'cancelled_by_guest', // Added new status
+        'cancelled_by_guest',
+        'cancelled_by_admin', // Added new status
         'completed',
         'no_show',
       ] as BookingStatus[],
@@ -61,4 +62,3 @@ bookedDateRangeSchema.index({ propertyId: 1, status: 1 });
 
 
 export default mongoose.models.BookedDateRange || mongoose.model<BookedDateRangeDocument>("BookedDateRange", bookedDateRangeSchema);
-

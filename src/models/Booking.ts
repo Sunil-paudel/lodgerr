@@ -45,7 +45,8 @@ const bookingSchema = new Schema<BookingDocument>(
         'pending_payment',
         'confirmed_by_host', 
         'rejected_by_host', 
-        'cancelled_by_guest', // Added new status
+        'cancelled_by_guest',
+        'cancelled_by_admin', // Added new status
         'completed',
         'no_show'
       ] as BookingStatus[],
@@ -60,4 +61,3 @@ bookingSchema.index({ listingId: 1, startDate: 1, endDate: 1 });
 bookingSchema.index({ guestId: 1 });
 
 export default mongoose.models.Booking || mongoose.model<BookingDocument>("Booking", bookingSchema);
-

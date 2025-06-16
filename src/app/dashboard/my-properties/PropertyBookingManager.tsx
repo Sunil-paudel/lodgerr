@@ -8,9 +8,10 @@ import type { Booking as BookingType, BookingStatus } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { CheckCircle, XCircle, Loader2, CalendarDays, UserCircle, Info } from 'lucide-react';
+import { CheckCircle, XCircle, Loader2, CalendarDays, UserCircle, Info, ShieldAlert, Trash2 } from 'lucide-react';
 import { format, isValid } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useSession } from 'next-auth/react'; // Import useSession
 
 interface PropertyBookingManagerProps {
   propertyId: string;
@@ -37,6 +38,7 @@ const getStatusColor = (status?: BookingStatus) => {
     case 'confirmed_by_host': return 'text-green-600 bg-green-100/80 border-green-300';
     case 'rejected_by_host': return 'text-red-600 bg-red-100/80 border-red-300';
     case 'cancelled_by_guest': return 'text-slate-600 bg-slate-100/80 border-slate-300';
+    case 'cancelled_by_admin': return 'text-orange-600 bg-orange-100/80 border-orange-300'; // New color for admin cancel
     case 'completed': return 'text-blue-600 bg-blue-100/80 border-blue-300';
     default: return 'text-gray-600 bg-gray-100/80 border-gray-300';
   }
@@ -51,6 +53,7 @@ const formatBookingStatusDisplay = (status?: BookingStatus): string => {
 
 
 export function PropertyBookingManager({ propertyId, initialBookings }: PropertyBookingManagerProps) {
+  const { data: session } = useSession(); // Get session for admin check
   const [bookings, setBookings] = useState<FormattedBooking[]>([]);
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({}); 
   const router = useRouter();
@@ -76,7 +79,7 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
     setIsFormatting(false);
   }, [initialBookings]);
 
-  const handleManageBooking = async (bookingId: string, newStatus: 'confirmed_by_host' | 'rejected_by_host') => {
+  const handleManageBooking = async (bookingId: string, newStatus: 'confirmed_by_host' | 'rejected_by_host' | 'cancelled_by_admin') => {
     setLoadingStates(prev => ({ ...prev, [bookingId]: true }));
     try {
       const response = await fetch(`/api/bookings/${bookingId}/manage`, {
@@ -90,12 +93,11 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
         throw new Error(result.message || 'Failed to update booking status.');
       }
 
-      const formattedNewStatus = newStatus.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-
+      const formattedNewStatusDisplay = formatBookingStatusDisplay(newStatus);
 
       toast({
         title: 'Booking Updated',
-        description: `Booking status changed to ${formattedNewStatus}.`,
+        description: `Booking status changed to ${formattedNewStatusDisplay}.`,
       });
       
       router.refresh(); 
@@ -149,97 +151,79 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
     );
   }
 
-
-  const pendingBookings = bookings.filter(b => b.bookingStatus === 'pending_confirmation');
-  const otherBookings = bookings.filter(b => b.bookingStatus !== 'pending_confirmation');
-
+  const isAdmin = session?.user?.role === 'admin';
 
   return (
-    <div className="space-y-6">
-      {pendingBookings.length > 0 && (
-        <div>
-          <h3 className="text-lg font-medium mb-2 text-amber-700">Pending Confirmation ({pendingBookings.length})</h3>
-          <div className="space-y-3">
-            {pendingBookings.map(booking => (
-              <Card key={booking.id} className="shadow-sm hover:shadow-md transition-shadow">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center space-x-3">
-                    <Avatar className="h-10 w-10">
-                      <AvatarImage src={booking.guestDetails?.avatarUrl || undefined} alt={booking.guestDetails?.name || 'Guest'} />
-                      <AvatarFallback>{getInitials(booking.guestDetails?.name)}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <CardTitle className="text-base font-semibold">{booking.guestDetails?.name || 'Guest User'}</CardTitle>
-                      <CardDescription className="text-xs">{booking.guestDetails?.email}</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="text-sm space-y-1.5">
-                  <p className="flex items-center"><CalendarDays className="mr-2 h-4 w-4 text-muted-foreground"/> Dates: {booking.formattedStartDate} - {booking.formattedEndDate}</p>
-                  <p>Total Price: ${booking.totalPrice.toFixed(2)}</p>
-                  <p>Requested: {booking.formattedCreatedAt}</p>
-                </CardContent>
-                <CardFooter className="flex justify-end space-x-2 p-4 border-t mt-2">
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleManageBooking(booking.id, 'rejected_by_host')}
-                    disabled={loadingStates[booking.id]}
-                  >
-                    {loadingStates[booking.id] ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <XCircle className="mr-1.5 h-4 w-4" />}
-                    Reject
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="bg-green-600 hover:bg-green-700 text-primary-foreground"
-                    onClick={() => handleManageBooking(booking.id, 'confirmed_by_host')}
-                    disabled={loadingStates[booking.id]}
-                  >
-                    {loadingStates[booking.id] ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-1.5 h-4 w-4" />}
-                    Accept
-                  </Button>
-                </CardFooter>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {otherBookings.length > 0 && (
-         <div>
-            <h3 className="text-lg font-medium mt-6 mb-2 text-foreground/80">Other Bookings ({otherBookings.length})</h3>
-            <div className="space-y-3">
-            {otherBookings.map(booking => (
-              <Card key={booking.id} className={`shadow-sm ${getStatusColor(booking.bookingStatus)} border-opacity-60`}>
-                <CardHeader className="pb-3">
-                   <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                        <Avatar className="h-10 w-10 border-2 border-white/50">
-                            <AvatarImage src={booking.guestDetails?.avatarUrl || undefined} alt={booking.guestDetails?.name || 'Guest'} />
-                            <AvatarFallback className="bg-opacity-50">{getInitials(booking.guestDetails?.name)}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                            <CardTitle className="text-base font-semibold">{booking.guestDetails?.name || 'Guest User'}</CardTitle>
-                            <CardDescription className="text-xs opacity-80">{booking.guestDetails?.email}</CardDescription>
-                        </div>
-                        </div>
-                         <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(booking.bookingStatus)} border`}>
-                            {booking.formattedBookingStatus}
-                        </span>
-                   </div>
-                </CardHeader>
-                <CardContent className="text-sm space-y-1.5 opacity-90">
-                  <p className="flex items-center"><CalendarDays className="mr-2 h-4 w-4"/> Dates: {booking.formattedStartDate} - {booking.formattedEndDate}</p>
-                  <p>Total Price: ${booking.totalPrice.toFixed(2)}</p>
-                   <p>Created: {booking.formattedCreatedAt}</p>
-                </CardContent>
-                {/* No CardFooter with Accept/Reject buttons for "Other Bookings" in this reverted version */}
-              </Card>
-            ))}
+    <div className="space-y-3">
+      {bookings.map(booking => (
+        <Card key={booking.id} className={`shadow-sm hover:shadow-md transition-shadow ${getStatusColor(booking.bookingStatus)} border-opacity-60`}>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <Avatar className="h-10 w-10 border-2 border-white/50">
+                  <AvatarImage src={booking.guestDetails?.avatarUrl || undefined} alt={booking.guestDetails?.name || 'Guest'} />
+                  <AvatarFallback className="bg-opacity-50">{getInitials(booking.guestDetails?.name)}</AvatarFallback>
+                </Avatar>
+                <div>
+                  <CardTitle className="text-base font-semibold">{booking.guestDetails?.name || 'Guest User'}</CardTitle>
+                  <CardDescription className="text-xs opacity-80">{booking.guestDetails?.email}</CardDescription>
+                </div>
+              </div>
+              <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(booking.bookingStatus)} border`}>
+                {booking.formattedBookingStatus} (Payment: {booking.paymentStatus})
+              </span>
             </div>
-         </div>
-      )}
+          </CardHeader>
+          <CardContent className="text-sm space-y-1.5 opacity-90">
+            <p className="flex items-center"><CalendarDays className="mr-2 h-4 w-4"/> Dates: {booking.formattedStartDate} - {booking.formattedEndDate}</p>
+            <p>Total Price: ${booking.totalPrice.toFixed(2)}</p>
+            <p>Requested: {booking.formattedCreatedAt}</p>
+          </CardContent>
+          <CardFooter className="flex flex-wrap justify-end items-center space-x-2 p-4 border-t mt-2 gap-y-2">
+            {booking.bookingStatus === 'pending_confirmation' && (
+              <>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => handleManageBooking(booking.id, 'rejected_by_host')}
+                  disabled={loadingStates[booking.id]}
+                  title="Reject this booking request"
+                >
+                  {loadingStates[booking.id] && booking.id === Object.keys(loadingStates).find(key => loadingStates[key]) ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <XCircle className="mr-1.5 h-4 w-4" />}
+                  Reject
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-green-600 hover:bg-green-700 text-primary-foreground"
+                  onClick={() => handleManageBooking(booking.id, 'confirmed_by_host')}
+                  disabled={loadingStates[booking.id]}
+                  title="Accept this booking request"
+                >
+                  {loadingStates[booking.id] && booking.id === Object.keys(loadingStates).find(key => loadingStates[key]) ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-1.5 h-4 w-4" />}
+                  Accept
+                </Button>
+              </>
+            )}
+            {isAdmin && booking.bookingStatus === 'confirmed_by_host' && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-orange-500 text-orange-600 hover:bg-orange-500 hover:text-white"
+                onClick={() => handleManageBooking(booking.id, 'cancelled_by_admin')}
+                disabled={loadingStates[booking.id]}
+                title="Cancel this confirmed booking (Admin Action)"
+              >
+                {loadingStates[booking.id] && booking.id === Object.keys(loadingStates).find(key => loadingStates[key]) ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ShieldAlert className="mr-1.5 h-4 w-4" />}
+                Admin Cancel
+              </Button>
+            )}
+            {/* Display a message if no actions are available for the current user/status */}
+            { booking.bookingStatus !== 'pending_confirmation' && !(isAdmin && booking.bookingStatus === 'confirmed_by_host') && (
+                 <p className="text-xs text-muted-foreground w-full text-right italic">No actions available for this booking status.</p>
+            )}
+          </CardFooter>
+        </Card>
+      ))}
     </div>
   );
 }
-    
