@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Badge } from '@/components/ui/badge';
 import { MapPin, CalendarDays, DollarSign, Info, PackageCheck, CreditCard, Clock3, AlertTriangle, ImageIcon, Building } from 'lucide-react';
 import type { BookingStatus, PaymentStatus } from '@/lib/types';
+import { BookingActions } from './BookingActions'; // Import the new component
 
 interface EnrichedBookingForDisplay {
   id: string;
@@ -87,7 +88,7 @@ const BookingDisplayCard = ({ booking }: BookingDisplayCardProps) => {
             </div>
           )}
         </div>
-        <div className="md:col-span-2">
+        <div className="md:col-span-2 flex flex-col">
           <CardHeader className="pb-3">
             {booking.propertyDetails?.id ? (
               <Link href={`/properties/${booking.propertyDetails.id}`}>
@@ -104,7 +105,7 @@ const BookingDisplayCard = ({ booking }: BookingDisplayCardProps) => {
               <MapPin size={14} className="mr-1.5 flex-shrink-0" /> {propertyLocation}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2.5 text-sm pt-0 pb-4">
+          <CardContent className="space-y-2.5 text-sm pt-0 pb-4 flex-grow">
             <div className="flex items-center">
               <CalendarDays size={16} className="mr-2 text-primary" />
               <span>Dates: {booking.formattedStartDate} to {booking.formattedEndDate}</span>
@@ -128,8 +129,15 @@ const BookingDisplayCard = ({ booking }: BookingDisplayCardProps) => {
               </Badge>
             </div>
           </CardContent>
-          <CardFooter className="text-xs text-muted-foreground pt-0 pb-4 px-6">
-            <Clock3 size={12} className="mr-1.5 flex-shrink-0" /> Booked on: {booking.formattedCreatedAt} (ID: {booking.id})
+          <CardFooter className="text-xs text-muted-foreground pt-3 pb-4 px-6 border-t flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div className="flex items-center">
+                <Clock3 size={12} className="mr-1.5 flex-shrink-0" /> Booked on: {booking.formattedCreatedAt} (ID: {booking.id})
+            </div>
+            <BookingActions
+              bookingId={booking.id}
+              bookingStatus={booking.rawBookingStatus}
+              propertyTitle={booking.propertyDetails?.title}
+            />
           </CardFooter>
         </div>
       </div>
