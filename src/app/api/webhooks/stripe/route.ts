@@ -1,13 +1,14 @@
 
+'use server';
+
 import { NextResponse, type NextRequest } from 'next/server';
 import Stripe from 'stripe';
 import connectDB from '@/utils/db';
 import Booking, { type BookingDocument } from '@/models/Booking';
 import Payment from '@/models/Payment';
-import BookedDateRangeModel from '@/models/BookedDateRange'; // Import new model
+import BookedDateRangeModel from '@/models/BookedDateRange';
 import mongoose from 'mongoose';
 
-// Use the environment variable for the webhook secret
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET; 
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -35,7 +36,6 @@ export const config = {
 };
 
 export async function POST(request: NextRequest) {
-  // Check if the STRIPE_WEBHOOK_SECRET is configured
   if (!STRIPE_WEBHOOK_SECRET) {
     console.error("[Webhook] Stripe webhook secret (STRIPE_WEBHOOK_SECRET) is not configured in environment variables. Please set it up. Webhook processing will fail.");
     return NextResponse.json({ message: "Webhook secret not configured. Payment confirmation will fail." }, { status: 500 });
@@ -50,7 +50,6 @@ export async function POST(request: NextRequest) {
       console.warn("[Webhook] Stripe webhook error: Missing signature.");
       return NextResponse.json({ message: "Missing Stripe signature." }, { status: 400 });
     }
-    // Use the environment variable STRIPE_WEBHOOK_SECRET here
     event = stripe.webhooks.constructEvent(rawBody, sig, STRIPE_WEBHOOK_SECRET);
   } catch (err: any) {
     console.error(`[Webhook] Stripe webhook signature verification failed: ${err.message}`);
@@ -83,29 +82,26 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ message: 'Booking not found.' }, { status: 404 });
         }
 
-        if (booking.paymentStatus === 'paid') {
-          console.log(`[Webhook] Booking ${bookingId} already marked as paid. Ignoring duplicate event.`);
+        if (booking.paymentStatus === 'paid' && booking.bookingStatus !== 'pending_payment') {
+          console.log(`[Webhook] Booking ${bookingId} payment already processed and status is ${booking.bookingStatus}. Ignoring duplicate event.`);
           return NextResponse.json({ received: true, message: 'Booking already processed.' });
         }
 
         booking.paymentStatus = 'paid';
-        booking.bookingStatus = 'confirmed_by_host'; 
+        booking.bookingStatus = 'pending_confirmation'; // Set to pending_confirmation for host approval
         await booking.save();
-        console.log(`[Webhook] Booking ${bookingId} updated to paid and confirmed.`);
+        console.log(`[Webhook] Booking ${bookingId} updated to paid and pending_confirmation.`);
 
-        // Update BookedDateRange document
         const updatedBookedDateRange = await BookedDateRangeModel.findOneAndUpdate(
           { bookingId: booking._id },
-          { $set: { status: "confirmed_by_host" } },
+          { $set: { status: "pending_confirmation" } }, // Also set BookedDateRange to pending_confirmation
           { new: true }
         );
 
         if (updatedBookedDateRange) {
-            console.log(`[Webhook] Updated BookedDateRange document for booking ${booking._id} to confirmed_by_host.`);
+            console.log(`[Webhook] Updated BookedDateRange document for booking ${booking._id} to pending_confirmation.`);
         } else {
             console.warn(`[Webhook] BookedDateRange document for booking ${booking._id} not found during completion. This might indicate an issue if it was expected to exist.`);
-            // Optionally, create it if it's missing, though it should have been created in initiate-payment
-            // For now, we'll just log a warning.
         }
 
         const newPayment = new Payment({
@@ -113,7 +109,7 @@ export async function POST(request: NextRequest) {
           stripePaymentIntentId: paymentIntentId,
           amount: session.amount_total, 
           currency: session.currency?.toLowerCase() || 'usd',
-          status: 'succeeded',
+          status: 'succeeded', // Stripe payment intent succeeded
         });
         await newPayment.save();
         console.log(`[Webhook] Payment record created for booking ${bookingId}, paymentIntent ${paymentIntentId}`);
@@ -132,13 +128,13 @@ export async function POST(request: NextRequest) {
       if (failedBookingId && mongoose.Types.ObjectId.isValid(failedBookingId)) {
         try {
             const bookingToUpdate = await Booking.findById(failedBookingId) as BookingDocument | null;
-            if (bookingToUpdate && bookingToUpdate.paymentStatus !== 'paid') { // Ensure not already paid
+            if (bookingToUpdate && bookingToUpdate.paymentStatus !== 'paid') { 
                 bookingToUpdate.paymentStatus = 'failed';
-                // bookingToUpdate.bookingStatus = 'rejected_by_host'; // Or a new 'payment_failed' status
+                // Optionally change bookingStatus to something like 'payment_failed' or 'rejected_by_system'
+                // For now, just updating paymentStatus.
                 await bookingToUpdate.save();
                 console.log(`[Webhook] Booking ${failedBookingId} paymentStatus updated to 'failed'.`);
 
-                // Remove the BookedDateRange document for failed payment
                 const deletedRange = await BookedDateRangeModel.findOneAndDelete({ bookingId: bookingToUpdate._id });
                 if (deletedRange) {
                     console.log(`[Webhook] Removed BookedDateRange document for booking ${bookingToUpdate._id} due to payment failure.`);
@@ -160,4 +156,3 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ received: true });
 }
-

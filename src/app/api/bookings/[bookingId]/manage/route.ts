@@ -7,10 +7,10 @@ import mongoose from 'mongoose';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import connectDB from '@/utils/db';
 import Booking, { type BookingDocument } from '@/models/Booking';
-import Property from '@/models/Property'; // Keep for host check
-import BookedDateRangeModel from '@/models/BookedDateRange'; // Import new model
+import Property from '@/models/Property';
+import BookedDateRangeModel from '@/models/BookedDateRange';
 import * as z from 'zod';
-import type { BookingStatus } from '@/lib/types';
+import type { BookingStatus, PaymentStatus } from '@/lib/types';
 
 const manageBookingSchema = z.object({
   status: z.enum([
@@ -50,12 +50,12 @@ export async function PATCH(
       return NextResponse.json({ message: 'Booking not found.' }, { status: 404 });
     }
 
+    // Allow action only if booking is currently 'pending_confirmation'
     if (booking.bookingStatus !== 'pending_confirmation') {
         return NextResponse.json({ message: `Cannot update booking. Current status is '${booking.bookingStatus}', not 'pending_confirmation'.`}, { status: 409 }); 
     }
     
-    // Fetch property to verify host
-    const tempProperty = await Property.findById(booking.listingId).lean(); // Use lean for efficiency
+    const tempProperty = await Property.findById(booking.listingId).lean(); 
     if (!tempProperty) {
       return NextResponse.json({ message: 'Associated property not found.' }, { status: 404 });
     }
@@ -67,31 +67,24 @@ export async function PATCH(
     }
 
     booking.bookingStatus = newStatus;
-    await booking.save();
 
-    // Update BookedDateRange document
     if (newStatus === 'confirmed_by_host') {
         const updatedBookedDateRange = await BookedDateRangeModel.findOneAndUpdate(
             { bookingId: booking._id },
-            { $set: { status: newStatus } },
+            { $set: { status: newStatus } }, // Update BookedDateRange status to confirmed
             { new: true }
         );
-        if (updatedBookedDateRange) {
-            console.log(`[API /bookings/.../manage PATCH] Updated BookedDateRange ${updatedBookedDateRange._id} for booking ${booking._id} to ${newStatus}.`);
+        if (!updatedBookedDateRange) {
+             console.warn(`[API /bookings/.../manage PATCH] BookedDateRange for booking ${booking._id} not found when trying to confirm. This is unexpected if it was 'pending_confirmation'.`);
+             // Optionally, create it if it's mission critical and somehow missing, though it should exist.
         } else {
-            // This case should ideally not happen if a BookedDateRange was created with the booking
-            console.warn(`[API /bookings/.../manage PATCH] BookedDateRange for booking ${booking._id} not found when trying to confirm. Creating one.`);
-            const newBookedDateRange = new BookedDateRangeModel({
-                propertyId: booking.listingId,
-                bookingId: booking._id,
-                startDate: booking.startDate,
-                endDate: booking.endDate,
-                status: newStatus,
-            });
-            await newBookedDateRange.save();
-            console.log(`[API /bookings/.../manage PATCH] Created missing BookedDateRange ${newBookedDateRange._id} for booking ${booking._id} with status ${newStatus}.`);
+            console.log(`[API /bookings/.../manage PATCH] Updated BookedDateRange ${updatedBookedDateRange._id} for booking ${booking._id} to ${newStatus}.`);
         }
     } else if (newStatus === 'rejected_by_host') {
+        // If booking was paid and is now rejected, set paymentStatus to 'refunded' (conceptual)
+        if (booking.paymentStatus === 'paid') {
+            booking.paymentStatus = 'refunded' as PaymentStatus;
+        }
         const deletedBookedDateRange = await BookedDateRangeModel.findOneAndDelete({ bookingId: booking._id });
         if (deletedBookedDateRange) {
             console.log(`[API /bookings/.../manage PATCH] Deleted BookedDateRange ${deletedBookedDateRange._id} for booking ${booking._id} due to rejection.`);
@@ -99,6 +92,8 @@ export async function PATCH(
             console.warn(`[API /bookings/.../manage PATCH] BookedDateRange for booking ${booking._id} not found when trying to delete after rejection.`);
         }
     }
+
+    await booking.save();
 
     return NextResponse.json({ message: `Booking status updated to ${newStatus}.`, booking: booking.toObject() }, { status: 200 });
 
