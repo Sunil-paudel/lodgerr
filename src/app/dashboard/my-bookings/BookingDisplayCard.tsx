@@ -75,6 +75,7 @@ const BookingDisplayCard = ({ booking }: BookingDisplayCardProps) => {
   const aiHint = booking.propertyDetails?.mainImage ? "booked property" : "placeholder property";
 
   const isCurrentUserGuest = session?.user?.id === booking.guestId;
+  const isAdmin = session?.user?.role === 'admin';
 
   return (
     <Card className="overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-200 ease-in-out">
@@ -143,18 +144,20 @@ const BookingDisplayCard = ({ booking }: BookingDisplayCardProps) => {
                 <Clock3 size={12} className="mr-1.5 flex-shrink-0" /> Booked on: {booking.formattedCreatedAt} (ID: {booking.id})
             </div>
             <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-              {isCurrentUserGuest && (
+              {(isCurrentUserGuest || isAdmin) && (
                 <Button variant="outline" size="sm" className="w-full sm:w-auto border-blue-500 text-blue-600 hover:bg-blue-500/10 hover:text-blue-700" asChild>
                   <Link href={`/bookings/${booking.id}/edit`}>
                     <Edit3 className="mr-2 h-4 w-4" /> Edit Booking
                   </Link>
                 </Button>
               )}
-              <BookingActions
-                bookingId={booking.id}
-                bookingStatus={booking.rawBookingStatus}
-                propertyTitle={booking.propertyDetails?.title}
-              />
+              {isCurrentUserGuest && ( // BookingActions (like cancel) are typically for the guest themselves
+                <BookingActions
+                  bookingId={booking.id}
+                  bookingStatus={booking.rawBookingStatus}
+                  propertyTitle={booking.propertyDetails?.title}
+                />
+              )}
             </div>
           </CardFooter>
         </div>
