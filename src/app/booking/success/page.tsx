@@ -1,22 +1,16 @@
-"use client"
-import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
-import Header from '@/components/layout/Header';
-import Footer from '@/components/layout/Footer';
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  CardFooter,
-} from '@/components/ui/card';
-import { CheckCircle, Loader2, Home } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+"use client";
 
-function BookingSuccessClient() {
+import { useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import Header from "@/components/layout/Header";
+import Footer from "@/components/layout/Footer";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { CheckCircle, Loader2, Home } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+
+export default function BookingSuccessPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { toast } = useToast();
@@ -25,27 +19,26 @@ function BookingSuccessClient() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const sessionId = searchParams?.get('session_id');
-    const bkId = searchParams?.get('booking_id');
+    const sessionId = searchParams.get("session_id");
+    const bkId = searchParams.get("booking_id");
 
     if (!sessionId) {
-      setError('Missing payment session information. Your booking may not be confirmed.');
+      setError("Missing payment session information. Your booking may not be confirmed.");
       toast({
-        title: 'Confirmation Issue',
-        description: 'Payment session ID is missing. Please check your bookings or contact support.',
-        variant: 'destructive',
+        title: "Confirmation Issue",
+        description: "Payment session ID is missing. Please check your bookings or contact support.",
+        variant: "destructive",
       });
       setIsLoading(false);
       return;
     }
 
     if (!bkId) {
-      setError('Missing booking information. Your booking confirmation might be delayed.');
+      setError("Missing booking information. Your booking confirmation might be delayed.");
       toast({
-        title: 'Confirmation Pending',
-        description:
-          "Booking ID is missing. We'll confirm your booking status shortly. Check your dashboard.",
-        variant: 'destructive',
+        title: "Confirmation Pending",
+        description: "Booking ID is missing. We'll confirm your booking status shortly. Check your dashboard.",
+        variant: "destructive",
       });
     }
 
@@ -74,12 +67,12 @@ function BookingSuccessClient() {
           <CardHeader>
             <CheckCircle className="mx-auto h-16 w-16 text-green-500 mb-4" />
             <CardTitle className="text-3xl font-bold font-headline text-primary">
-              {error ? 'Confirmation Pending' : 'Booking Successful!'}
+              {error ? "Confirmation Pending" : "Booking Successful!"}
             </CardTitle>
             <CardDescription className="text-base">
               {error
                 ? error
-                : 'Thank you for your booking! Your payment has been processed successfully. A confirmation has been sent to your email (feature pending).'}
+                : "Thank you for your booking! Your payment has been processed successfully. A confirmation has been sent to your email (feature pending)."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -91,16 +84,12 @@ function BookingSuccessClient() {
             )}
             {error && (
               <p className="text-sm text-destructive mb-4">
-                If you have questions, please contact support with session ID:{' '}
-                {searchParams?.get('session_id') || 'N/A'}.
+                If you have questions, please contact support with session ID: {searchParams.get("session_id") || "N/A"}.
               </p>
             )}
           </CardContent>
           <CardFooter className="flex flex-col sm:flex-row justify-center items-center gap-3 pt-6">
-            <Button
-              asChild
-              className="w-full sm:w-auto bg-accent hover:bg-accent/90 text-accent-foreground"
-            >
+            <Button asChild className="w-full sm:w-auto bg-accent hover:bg-accent/90 text-accent-foreground">
               <Link href="/dashboard">
                 <Home className="mr-2 h-4 w-4" /> Go to Dashboard
               </Link>
@@ -113,13 +102,5 @@ function BookingSuccessClient() {
       </main>
       <Footer />
     </div>
-  );
-}
-
-export default function BookingSuccessPage() {
-  return (
-    <Suspense fallback={<div className="p-8 text-center">Loading confirmation...</div>}>
-      <BookingSuccessClient />
-    </Suspense>
   );
 }
