@@ -1,6 +1,4 @@
 
-'use server';
-
 import { NextResponse, type NextRequest } from 'next/server';
 import Stripe from 'stripe';
 import connectDB from '@/utils/db';
