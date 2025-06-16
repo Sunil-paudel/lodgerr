@@ -1,5 +1,5 @@
 
-"use client";
+"use client"; // Add this directive
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -241,20 +241,20 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
                       variant="destructive"
                       size="sm"
                       onClick={() => handleManageBooking(booking.id, 'rejected_by_host')}
-                      disabled={isLoadingAction}
+                      disabled={isLoadingAction && currentAction === 'manage'}
                       title="Reject this booking request"
                     >
-                      {isLoadingAction && currentAction === 'manage' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <XCircle className="mr-1.5 h-4 w-4" />}
+                      {(isLoadingAction && currentAction === 'manage') ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <XCircle className="mr-1.5 h-4 w-4" />}
                       Reject
                     </Button>
                     <Button
                       size="sm"
                       className="bg-green-600 hover:bg-green-700 text-primary-foreground"
                       onClick={() => handleManageBooking(booking.id, 'confirmed_by_host')}
-                      disabled={isLoadingAction}
+                      disabled={isLoadingAction && currentAction === 'manage'}
                       title="Accept this booking request"
                     >
-                      {isLoadingAction && currentAction === 'manage' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-1.5 h-4 w-4" />}
+                      {(isLoadingAction && currentAction === 'manage') ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-1.5 h-4 w-4" />}
                       Accept
                     </Button>
                   </>
@@ -265,10 +265,10 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
                     size="sm"
                     className="border-orange-500 text-orange-600 hover:bg-orange-500 hover:text-white"
                     onClick={() => handleManageBooking(booking.id, 'cancelled_by_admin')}
-                    disabled={isLoadingAction}
+                    disabled={isLoadingAction && currentAction === 'manage'}
                     title="Cancel this booking as Admin. This will mark it as refunded (conceptually) and free up dates."
                   >
-                    {isLoadingAction && currentAction === 'manage' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ShieldAlert className="mr-1.5 h-4 w-4" />}
+                    {(isLoadingAction && currentAction === 'manage') ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ShieldAlert className="mr-1.5 h-4 w-4" />}
                     Admin Cancel
                   </Button>
                 )}
@@ -278,20 +278,20 @@ export function PropertyBookingManager({ propertyId, initialBookings }: Property
                     size="sm"
                     className="bg-red-700 hover:bg-red-800 text-white"
                     onClick={() => setDeleteAlertState({ isOpen: true, bookingId: booking.id, bookingTitle: bookingTitleForAlert })}
-                    disabled={isLoadingAction}
+                    disabled={isLoadingAction && currentAction === 'delete'}
                     title="Permanently delete this booking record as Admin. This action cannot be undone."
                   >
-                    {isLoadingAction && currentAction === 'delete' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Trash2 className="mr-1.5 h-4 w-4" />}
+                    {(isLoadingAction && currentAction === 'delete') ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Trash2 className="mr-1.5 h-4 w-4" />}
                     Admin Delete
                   </Button>
                 )}
                 
-                {!isAdmin && booking.bookingStatus !== 'pending_confirmation' && (
-                     <p className="text-xs text-muted-foreground w-full text-right italic">No actions available for this booking status.</p>
+                 {booking.bookingStatus !== 'pending_confirmation' && !(isAdmin && (['confirmed_by_host', 'pending_confirmation'].includes(booking.bookingStatus) || true)) && (
+                     <p className="text-xs text-muted-foreground w-full text-right italic">No host actions available for this status.</p>
                 )}
-                 {isAdmin && booking.bookingStatus !== 'pending_confirmation' && !['confirmed_by_host'].includes(booking.bookingStatus) && (
-                     <p className="text-xs text-muted-foreground w-full text-right italic">Admin: Manage via &quot;Admin Delete&quot; for this status.</p>
-                )}
+                {isAdmin && booking.bookingStatus !== 'pending_confirmation' && !['confirmed_by_host'].includes(booking.bookingStatus) && (
+                     <p className="text-xs text-muted-foreground w-full text-right italic">Admin: Manage via &quot;Admin Delete&quot;.</p>
+                 )}
                  {isAdmin && booking.bookingStatus === 'confirmed_by_host' && (
                      <p className="text-xs text-muted-foreground w-full text-right italic">Admin: Manage via &quot;Admin Cancel&quot; or &quot;Admin Delete&quot;.</p>
                  )}
